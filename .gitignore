@@ -6,4 +6,5 @@ dist/
 .env
 .env*.local
 coverage/
+.npm-cache/
 *.log
