@@ -4,6 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "powershell -ExecutionPolicy Bypass -File scripts/stop-next-dev.ps1 && powershell -ExecutionPolicy Bypass -File scripts/clean-next.ps1 && next dev",
+    "prebuild": "powershell -ExecutionPolicy Bypass -File scripts/stop-next-dev.ps1",
     "build": "next build",
     "lint": "next lint",
     "test": "vitest run",

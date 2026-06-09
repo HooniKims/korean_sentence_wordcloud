@@ -1,5 +1,13 @@
 import type { AnalysisItem, AnswerKey, GradingResult, StudentChoices } from "./schemas";
 
+export type StudentFeedbackItem = {
+  id: string;
+  surface: string;
+  lemma: string;
+  selected: string;
+  expected: string;
+};
+
 export function buildAnswerKey(items: AnalysisItem[]): AnswerKey {
   return Object.fromEntries(items.map((item) => [item.id, item.pos]));
 }
@@ -38,4 +46,21 @@ export function summarizeIncorrect(result: GradingResult): string {
   return result.incorrectItems
     .map((item) => `${item.surface}: ${item.actual ?? "미선택"}→${item.expected}`)
     .join(", ");
+}
+
+export function buildStudentFeedback(
+  items: AnalysisItem[],
+  choices: StudentChoices,
+  grading: GradingResult
+): StudentFeedbackItem[] {
+  return grading.incorrectItems.map((incorrect) => {
+    const item = items.find((candidate) => candidate.id === incorrect.id);
+    return {
+      id: incorrect.id,
+      surface: incorrect.surface,
+      lemma: item?.lemma ?? "",
+      selected: choices[incorrect.id] ?? "미선택",
+      expected: incorrect.expected
+    };
+  });
 }

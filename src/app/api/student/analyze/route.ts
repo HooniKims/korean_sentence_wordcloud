@@ -7,11 +7,7 @@ export async function POST(request: Request) {
   try {
     const input = analyzeRequestSchema.parse(await request.json());
     const storage = getStorage();
-    const student = await storage.findStudent(input);
-
-    if (!student) {
-      return NextResponse.json({ error: "반, 학번, 이름이 명단과 일치하지 않습니다." }, { status: 404 });
-    }
+    const student = await storage.ensureStudent(input);
     if (student.locked) {
       return NextResponse.json({ error: "교사가 확정하여 더 이상 수정할 수 없습니다." }, { status: 423 });
     }

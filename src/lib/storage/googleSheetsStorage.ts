@@ -9,11 +9,10 @@ import {
   type AnswerKey,
   type StudentIdentity
 } from "../schemas";
-import { buildWordcloudEntries } from "../wordcloud";
+import { buildWordcloudEntries, buildWordcloudImagePrompt } from "../wordcloud";
 import type { SaveSubmissionInput, Storage, StudentRecord, SubmissionRecord } from "./types";
 
 const HEADERS = [
-  "class",
   "student_number",
   "student_name",
   "locked",
@@ -26,7 +25,8 @@ const HEADERS = [
   "grading_json",
   "score",
   "incorrect_summary",
-  "wordcloud_json"
+  "wordcloud_json",
+  "image_prompt"
 ] as const;
 
 type Header = (typeof HEADERS)[number];
@@ -46,8 +46,7 @@ function makeSheetsClient(): sheets_v4.Sheets {
 function getSheetConfig() {
   const env = getServerEnv();
   return {
-    sheetId: env.googleSheetId,
-    tab: env.googleSheetTab
+    sheetId: env.googleSheetId
   };
 }
 
@@ -79,13 +78,12 @@ function rowToObject(values: string[]): SheetRow {
 
 function rowMatches(row: SheetRow, identity: StudentIdentity): boolean {
   return (
-    row.class.trim() === identity.className.trim() &&
     row.student_number.trim() === identity.studentNumber.trim() &&
     row.student_name.trim() === identity.studentName.trim()
   );
 }
 
-function toSubmission(row: SheetRow, rowNumber: number): SubmissionRecord {
+function toSubmission(row: SheetRow, rowNumber: number, className: string): SubmissionRecord {
   const analysisItems = parseJson(row.ai_analysis_json, [], analysisItemsSchema);
   const studentChoices = parseJson(row.student_choices_json, {}, studentChoiceSchema);
   const answerKey = parseJson(row.answer_key_json, {}, answerKeySchema);
@@ -93,7 +91,7 @@ function toSubmission(row: SheetRow, rowNumber: number): SubmissionRecord {
   const wordcloudEntries = row.wordcloud_json ? JSON.parse(row.wordcloud_json) : buildWordcloudEntries(analysisItems, studentChoices, answerKey, grading);
 
   return {
-    className: row.class,
+    className,
     studentNumber: row.student_number,
     studentName: row.student_name,
     rowNumber,
@@ -107,13 +105,13 @@ function toSubmission(row: SheetRow, rowNumber: number): SubmissionRecord {
     grading,
     score: row.score ? Number(row.score) : grading?.score,
     incorrectSummary: row.incorrect_summary || undefined,
-    wordcloudEntries
+    wordcloudEntries,
+    imagePrompt: row.image_prompt || ""
   };
 }
 
 function submissionToRow(input: SaveSubmissionInput, locked: boolean, now: string): string[] {
   return [
-    input.className,
     input.studentNumber,
     input.studentName,
     locked ? "TRUE" : "FALSE",
@@ -126,15 +124,28 @@ function submissionToRow(input: SaveSubmissionInput, locked: boolean, now: strin
     stringifyJson(input.grading),
     String(input.grading.score),
     input.incorrectSummary,
-    stringifyJson(input.wordcloudEntries)
+    stringifyJson(input.wordcloudEntries),
+    input.imagePrompt
   ];
 }
 
-async function readRows(sheets: sheets_v4.Sheets): Promise<Array<{ row: SheetRow; rowNumber: number }>> {
-  const { sheetId, tab } = getSheetConfig();
+async function listClassTabs(sheets: sheets_v4.Sheets): Promise<string[]> {
+  const { sheetId } = getSheetConfig();
+  const response = await sheets.spreadsheets.get({
+    spreadsheetId: sheetId,
+    fields: "sheets.properties.title"
+  });
+
+  return (response.data.sheets ?? [])
+    .map((sheet) => sheet.properties?.title)
+    .filter((title): title is string => Boolean(title && /^\d+반$/.test(title)));
+}
+
+async function readRows(sheets: sheets_v4.Sheets, tab: string): Promise<Array<{ row: SheetRow; rowNumber: number }>> {
+  const { sheetId } = getSheetConfig();
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: sheetId,
-    range: `${tab}!A:N`
+    range: `'${tab}'!A:N`
   });
   const values = response.data.values ?? [];
   const [, ...dataRows] = values;
@@ -145,11 +156,11 @@ async function readRows(sheets: sheets_v4.Sheets): Promise<Array<{ row: SheetRow
   }));
 }
 
-async function updateRow(sheets: sheets_v4.Sheets, rowNumber: number, values: string[]) {
-  const { sheetId, tab } = getSheetConfig();
+async function updateRow(sheets: sheets_v4.Sheets, tab: string, rowNumber: number, values: string[]) {
+  const { sheetId } = getSheetConfig();
   await sheets.spreadsheets.values.update({
     spreadsheetId: sheetId,
-    range: `${tab}!A${rowNumber}:N${rowNumber}`,
+    range: `'${tab}'!A${rowNumber}:N${rowNumber}`,
     valueInputOption: "RAW",
     requestBody: {
       values: [values]
@@ -157,17 +168,30 @@ async function updateRow(sheets: sheets_v4.Sheets, rowNumber: number, values: st
   });
 }
 
+async function appendStudentRow(sheets: sheets_v4.Sheets, identity: StudentIdentity) {
+  const { sheetId } = getSheetConfig();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: sheetId,
+    range: `'${identity.className}'!A:N`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: {
+      values: [[identity.studentNumber, identity.studentName, "FALSE", "", "", "", "", "", "", "", "", "", "", ""]]
+    }
+  });
+}
+
 export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage {
   return {
     async findStudent(identity) {
-      const rows = await readRows(client);
+      const rows = await readRows(client, identity.className);
       const match = rows.find(({ row }) => rowMatches(row, identity));
       if (!match) {
         return null;
       }
 
       return {
-        className: match.row.class,
+        className: identity.className,
         studentNumber: match.row.student_number,
         studentName: match.row.student_name,
         rowNumber: match.rowNumber,
@@ -177,8 +201,23 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
       };
     },
 
+    async ensureStudent(identity) {
+      const existing = await this.findStudent(identity);
+      if (existing) {
+        return existing;
+      }
+
+      await appendStudentRow(client, identity);
+      return {
+        className: identity.className,
+        studentNumber: identity.studentNumber,
+        studentName: identity.studentName,
+        locked: false
+      };
+    },
+
     async saveSubmission(input) {
-      const rows = await readRows(client);
+      const rows = await readRows(client, input.className);
       const match = rows.find(({ row }) => rowMatches(row, input));
       if (!match) {
         throw new Error("Roster record not found.");
@@ -188,7 +227,7 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
       }
 
       const now = new Date().toISOString();
-      await updateRow(client, match.rowNumber, submissionToRow(input, false, now));
+      await updateRow(client, input.className, match.rowNumber, submissionToRow(input, false, now));
       return {
         ...input,
         rowNumber: match.rowNumber,
@@ -200,14 +239,17 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
     },
 
     async getDashboardRows() {
-      const rows = await readRows(client);
-      return rows.map(({ row, rowNumber }) => toSubmission(row, rowNumber));
+      const tabs = await listClassTabs(client);
+      const rowsByTab = await Promise.all(tabs.map((tab) => readRows(client, tab)));
+      return rowsByTab
+        .flatMap((rows, index) => rows.map(({ row, rowNumber }) => toSubmission(row, rowNumber, tabs[index])))
+        .sort((left, right) => left.className.localeCompare(right.className, "ko") || left.studentNumber.localeCompare(right.studentNumber, "ko"));
     },
 
     async getStudentDetail(identity) {
-      const rows = await readRows(client);
+      const rows = await readRows(client, identity.className);
       const match = rows.find(({ row }) => rowMatches(row, identity));
-      return match ? toSubmission(match.row, match.rowNumber) : null;
+      return match ? toSubmission(match.row, match.rowNumber, identity.className) : null;
     },
 
     async updateAnswerKey(identity, answerKey: AnswerKey) {
@@ -218,6 +260,7 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
 
       const grading = gradeChoices(detail.analysisItems, detail.studentChoices, answerKey);
       const wordcloudEntries = buildWordcloudEntries(detail.analysisItems, detail.studentChoices, answerKey, grading);
+      const imagePrompt = buildWordcloudImagePrompt(detail, wordcloudEntries);
       const updated: SaveSubmissionInput = {
         className: detail.className,
         studentNumber: detail.studentNumber,
@@ -228,11 +271,12 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
         answerKey,
         grading,
         incorrectSummary: summarizeIncorrect(grading),
-        wordcloudEntries
+        wordcloudEntries,
+        imagePrompt
       };
 
       const now = new Date().toISOString();
-      await updateRow(client, detail.rowNumber, submissionToRow(updated, detail.locked, now));
+      await updateRow(client, detail.className, detail.rowNumber, submissionToRow(updated, detail.locked, now));
       return {
         ...updated,
         rowNumber: detail.rowNumber,
@@ -244,12 +288,12 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
     },
 
     async lockStudent(identity) {
-      const rows = await readRows(client);
+      const rows = await readRows(client, identity.className);
       const match = rows.find(({ row }) => rowMatches(row, identity));
       if (!match) {
         throw new Error("Roster record not found.");
       }
-      const current = toSubmission(match.row, match.rowNumber);
+      const current = toSubmission(match.row, match.rowNumber, identity.className);
       const values = submissionToRow(
         {
           className: current.className,
@@ -261,22 +305,23 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
           answerKey: current.answerKey,
           grading: current.grading ?? { correctCount: 0, totalCount: 0, score: 0, incorrectItems: [] },
           incorrectSummary: current.incorrectSummary ?? "",
-          wordcloudEntries: current.wordcloudEntries
+          wordcloudEntries: current.wordcloudEntries,
+          imagePrompt: current.imagePrompt
         },
         true,
         new Date().toISOString()
       );
-      await updateRow(client, match.rowNumber, values);
+      await updateRow(client, identity.className, match.rowNumber, values);
     },
 
     async lockClass(className) {
-      const rows = await readRows(client);
+      const rows = await readRows(client, className);
       await Promise.all(
         rows
-          .filter(({ row }) => row.class.trim() === className.trim())
+          .filter(({ row }) => row.student_number.trim() && row.student_name.trim())
           .map(({ row }) =>
             this.lockStudent({
-              className: row.class,
+              className,
               studentNumber: row.student_number,
               studentName: row.student_name
             })

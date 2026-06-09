@@ -23,6 +23,7 @@ export type SubmissionRecord = StudentRecord & {
   score?: number;
   incorrectSummary?: string;
   wordcloudEntries: WordcloudEntry[];
+  imagePrompt: string;
 };
 
 export type SaveSubmissionInput = StudentIdentity & {
@@ -33,10 +34,12 @@ export type SaveSubmissionInput = StudentIdentity & {
   grading: GradingResult;
   incorrectSummary: string;
   wordcloudEntries: WordcloudEntry[];
+  imagePrompt: string;
 };
 
 export type Storage = {
   findStudent(identity: StudentIdentity): Promise<StudentRecord | null>;
+  ensureStudent(identity: StudentIdentity): Promise<StudentRecord>;
   saveSubmission(input: SaveSubmissionInput): Promise<SubmissionRecord>;
   getDashboardRows(): Promise<SubmissionRecord[]>;
   getStudentDetail(identity: StudentIdentity): Promise<SubmissionRecord | null>;

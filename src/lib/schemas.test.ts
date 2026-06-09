@@ -20,4 +20,54 @@ describe("schemas", () => {
       })
     ).toThrow();
   });
+
+  it("derives the Korean class tab from the first two digits of the student number", () => {
+    expect(
+      studentIdentitySchema.parse({
+        studentNumber: "1100",
+        studentName: "김민수"
+      })
+    ).toMatchObject({
+      className: "1반",
+      studentNumber: "1100",
+      studentName: "김민수"
+    });
+
+    expect(
+      studentIdentitySchema.parse({
+        studentNumber: "1200",
+        studentName: "이서연"
+      })
+    ).toMatchObject({ className: "2반" });
+
+    expect(
+      studentIdentitySchema.parse({
+        studentNumber: "1500",
+        studentName: "박지호"
+      })
+    ).toMatchObject({ className: "5반" });
+  });
+
+  it("accepts only four numeric digits for the student number", () => {
+    expect(() =>
+      studentIdentitySchema.parse({
+        studentNumber: "100",
+        studentName: "김민수"
+      })
+    ).toThrow("학번은 숫자 4자리로 입력하세요.");
+
+    expect(() =>
+      studentIdentitySchema.parse({
+        studentNumber: "10A0",
+        studentName: "김민수"
+      })
+    ).toThrow("학번은 숫자 4자리로 입력하세요.");
+
+    expect(() =>
+      studentIdentitySchema.parse({
+        studentNumber: "1600",
+        studentName: "김민수"
+      })
+    ).toThrow("학번은 1100부터 1599 사이의 숫자 4자리로 입력하세요.");
+  });
 });

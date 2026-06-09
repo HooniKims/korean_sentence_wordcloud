@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { WordCloud } from "@/components/WordCloud";
 import { KOREAN_POS, type KoreanPos } from "@/lib/pos";
 import type { StudentIdentity } from "@/lib/schemas";
 import type { SubmissionRecord } from "@/lib/storage/types";
+import { buildTeacherPrintRows, getTeacherPrintTitle } from "@/lib/teacherPrint";
 
 type Props = {
   initialRows: SubmissionRecord[];
@@ -41,7 +41,15 @@ export function TeacherDashboard({ initialRows }: Props) {
   }, []);
 
   const classes = useMemo(() => Array.from(new Set(rows.map((row) => row.className))).sort(), [rows]);
-  const visibleRows = classFilter ? rows.filter((row) => row.className === classFilter) : rows;
+  const visibleRows = (classFilter ? rows.filter((row) => row.className === classFilter) : rows).sort(
+    (left, right) => left.className.localeCompare(right.className, "ko") || left.studentNumber.localeCompare(right.studentNumber, "ko")
+  );
+  const printRows = buildTeacherPrintRows(visibleRows);
+  const printTitle = getTeacherPrintTitle(classFilter);
+
+  function printDashboard() {
+    window.print();
+  }
 
   async function lockStudent(row: SubmissionRecord) {
     await fetch("/api/teacher/lock-student", {
@@ -87,8 +95,8 @@ export function TeacherDashboard({ initialRows }: Props) {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
       <section className="grid gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/70 bg-white/90 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.07)]">
-          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-full border border-black/10 px-4 py-2 outline-none focus:border-[#0071e3] focus:ring-4 focus:ring-[#0071e3]/10">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-cards)] bg-white p-5">
+          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-[var(--color-haze-grey)] px-4 py-2 outline-none focus:border-[var(--color-action-blue)] focus:ring-4 focus:ring-[rgba(43,127,255,0.12)]">
             <option value="">전체 반</option>
             {classes.map((className) => (
               <option key={className} value={className}>
@@ -96,39 +104,44 @@ export function TeacherDashboard({ initialRows }: Props) {
               </option>
             ))}
           </select>
-          <button onClick={lockClass} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white transition hover:bg-black">
-            선택 반 전체 확정
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={printDashboard} className="rounded-[var(--radius-buttons)] border border-black/10 bg-white px-4 py-2 text-sm font-medium text-[var(--color-charcoal-text)] transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)]">
+              출력
+            </button>
+            <button onClick={lockClass} className="rounded-[var(--radius-buttons)] border border-[var(--color-action-blue)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--color-action-blue)] transition hover:bg-[rgba(43,127,255,0.08)]">
+              선택 반 전체 확정
+            </button>
+          </div>
         </div>
 
-        {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
+        {error ? <div className="rounded-[var(--radius-cards)] border border-red-200 bg-white p-3 text-sm text-red-700">{error}</div> : null}
 
-        <div className="overflow-hidden rounded-md border border-white/70 bg-white/90 shadow-[0_20px_70px_rgba(0,0,0,0.08)]">
+        <div className="overflow-hidden rounded-[var(--radius-cards)] bg-white">
           <table className="w-full border-collapse text-sm">
-            <thead className="bg-[#f5f5f7] text-left text-[#6e6e73]">
+            <thead className="bg-[var(--color-haze-grey)] text-left text-[var(--color-charcoal-text)]">
               <tr>
                 <th className="p-3">학생</th>
                 <th className="p-3">상태</th>
                 <th className="p-3">점수</th>
-                <th className="p-3">미리보기</th>
+                <th className="p-3">프롬프트</th>
                 <th className="p-3">확정</th>
               </tr>
             </thead>
             <tbody>
               {visibleRows.map((row) => (
-                <tr key={`${row.className}-${row.studentNumber}-${row.studentName}`} className="border-t border-black/5 transition hover:bg-[#f5f5f7]/70">
+                <tr key={`${row.className}-${row.studentNumber}-${row.studentName}`} className="border-t border-black/5 transition hover:bg-[var(--color-haze-grey)]">
                   <td className="p-3">
-                    <button className="text-left font-semibold text-[#1d1d1f]" onClick={() => setSelected(row)}>
+                    <button className="text-left font-medium text-[var(--color-charcoal-text)] hover:text-[var(--color-action-blue)]" onClick={() => setSelected(row)}>
                       {row.className} {row.studentNumber} {row.studentName}
                     </button>
                   </td>
                   <td className="p-3">{row.locked ? "확정" : row.submittedAt ? "제출" : "미제출"}</td>
                   <td className="p-3">{row.score ?? "-"}</td>
                   <td className="max-w-60 p-3">
-                    <WordCloud entries={row.wordcloudEntries.slice(0, 8)} compact />
+                    {row.imagePrompt ? "생성됨" : "-"}
                   </td>
                   <td className="p-3">
-                    <button disabled={row.locked} onClick={() => lockStudent(row)} className="rounded-full border border-black/10 bg-white px-3 py-1.5 font-medium disabled:opacity-40">
+                    <button disabled={row.locked} onClick={() => lockStudent(row)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-white px-3 py-1.5 font-medium transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-40">
                       확정
                     </button>
                   </td>
@@ -142,25 +155,32 @@ export function TeacherDashboard({ initialRows }: Props) {
       <aside className="grid content-start gap-4">
         {selected ? (
           <>
-            <section className="rounded-md border border-white/70 bg-white/90 p-5 shadow-[0_16px_50px_rgba(0,0,0,0.07)]">
-              <h2 className="text-xl font-bold">
+            <section className="rounded-[var(--radius-cards)] bg-white p-5">
+              <h2 className="text-xl font-medium">
                 {selected.className} {selected.studentNumber} {selected.studentName}
               </h2>
-              <p className="mt-1 text-sm text-[#6e6e73]">
+              <p className="mt-1 text-sm text-[var(--color-charcoal-text)]/70">
                 점수 {selected.score ?? "-"} · {selected.locked ? "확정됨" : "수정 가능"}
               </p>
               <p className="mt-2 text-sm text-red-700">{selected.incorrectSummary}</p>
             </section>
-            <WordCloud entries={selected.wordcloudEntries} />
-            <section className="grid gap-3 rounded-md border border-white/70 bg-white/90 p-5 shadow-[0_16px_50px_rgba(0,0,0,0.07)]">
-              <h3 className="font-semibold">정답 품사 수정</h3>
+            <section className="grid gap-3 rounded-[var(--radius-cards)] bg-white p-5">
+              <h3 className="font-medium">이미지 생성 프롬프트</h3>
+              <textarea
+                readOnly
+                className="min-h-72 rounded-[var(--radius-inputs)] border border-black/10 bg-[var(--color-haze-grey)] px-3 py-2.5 text-sm leading-[1.5] outline-none"
+                value={selected.imagePrompt || "아직 생성된 프롬프트가 없습니다."}
+              />
+            </section>
+            <section className="grid gap-3 rounded-[var(--radius-cards)] bg-white p-5">
+              <h3 className="font-medium">정답 품사 수정</h3>
               {selected.analysisItems.map((item) => (
                 <div key={item.id} className="grid gap-2 border-t border-black/5 pt-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium">{item.surface}</span>
-                    <span className="text-sm text-[#6e6e73]">학생 선택: {selected.studentChoices[item.id] ?? "-"}</span>
+                    <span className="text-sm text-[var(--color-charcoal-text)]/70">학생 선택: {selected.studentChoices[item.id] ?? "-"}</span>
                   </div>
-                  <select value={selected.answerKey[item.id] ?? item.pos} onChange={(event) => updateAnswer(item.id, event.target.value as KoreanPos)} className="rounded-full border border-black/10 px-4 py-2 outline-none focus:border-[#0071e3] focus:ring-4 focus:ring-[#0071e3]/10">
+                  <select value={selected.answerKey[item.id] ?? item.pos} onChange={(event) => updateAnswer(item.id, event.target.value as KoreanPos)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-[var(--color-haze-grey)] px-4 py-2 outline-none focus:border-[var(--color-action-blue)] focus:ring-4 focus:ring-[rgba(43,127,255,0.12)]">
                     {KOREAN_POS.map((pos) => (
                       <option key={pos} value={pos}>
                         {pos}
@@ -172,9 +192,33 @@ export function TeacherDashboard({ initialRows }: Props) {
             </section>
           </>
         ) : (
-          <section className="rounded-md border border-white/70 bg-white/90 p-6 text-[#6e6e73] shadow-[0_16px_50px_rgba(0,0,0,0.07)]">학생을 선택하세요.</section>
+          <section className="rounded-[var(--radius-cards)] bg-white p-6 text-[var(--color-charcoal-text)]/70">학생을 선택하세요.</section>
         )}
       </aside>
+      <section className="teacher-print-sheet">
+        <h1>{printTitle}</h1>
+        <p>{new Date().toLocaleDateString("ko-KR")} · {printRows.length}명</p>
+        <table>
+          <thead>
+            <tr>
+              <th>학생</th>
+              <th>상태</th>
+              <th>점수</th>
+              <th>오답 요약</th>
+            </tr>
+          </thead>
+          <tbody>
+            {printRows.map((row) => (
+              <tr key={row.student}>
+                <td>{row.student}</td>
+                <td>{row.status}</td>
+                <td>{row.score}</td>
+                <td>{row.incorrectSummary}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </div>
   );
 }

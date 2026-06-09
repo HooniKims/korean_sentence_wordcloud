@@ -3,11 +3,29 @@ import { KOREAN_POS } from "./pos";
 
 export const koreanPosSchema = z.enum(KOREAN_POS);
 
-export const studentIdentitySchema = z.object({
-  className: z.string().trim().min(1, "반을 입력하세요."),
-  studentNumber: z.string().trim().min(1, "학번을 입력하세요."),
+function classNameFromStudentNumber(studentNumber: string): string {
+  const classNumber = Number(studentNumber.slice(0, 2)) - 10;
+  return `${classNumber}반`;
+}
+
+const studentIdentityBaseSchema = z.object({
+  className: z.string().trim().optional(),
+  studentNumber: z
+    .string()
+    .trim()
+    .regex(/^\d{4}$/, "학번은 숫자 4자리로 입력하세요.")
+    .refine((value) => /^1[1-5]\d{2}$/.test(value), "학번은 1100부터 1599 사이의 숫자 4자리로 입력하세요."),
   studentName: z.string().trim().min(1, "이름을 입력하세요.")
 });
+
+function normalizeIdentity<T extends z.infer<typeof studentIdentityBaseSchema>>(identity: T) {
+  return {
+    ...identity,
+    className: identity.className || classNameFromStudentNumber(identity.studentNumber)
+  };
+}
+
+export const studentIdentitySchema = studentIdentityBaseSchema.transform(normalizeIdentity);
 
 export const transcriptSchema = z
   .string()
@@ -29,14 +47,19 @@ export const analysisItemsSchema = z.array(analysisItemSchema).min(1).max(60);
 
 export const studentChoiceSchema = z.record(z.string(), koreanPosSchema);
 
-export const analyzeRequestSchema = studentIdentitySchema.extend({
-  transcriptText: transcriptSchema
-});
+export const analyzeRequestSchema = studentIdentityBaseSchema
+  .extend({
+    transcriptText: transcriptSchema
+  })
+  .transform(normalizeIdentity);
 
-export const submitRequestSchema = analyzeRequestSchema.extend({
-  items: analysisItemsSchema,
-  choices: studentChoiceSchema
-});
+export const submitRequestSchema = studentIdentityBaseSchema
+  .extend({
+    transcriptText: transcriptSchema,
+    items: analysisItemsSchema,
+    choices: studentChoiceSchema
+  })
+  .transform(normalizeIdentity);
 
 export const answerKeySchema = z.record(z.string(), koreanPosSchema);
 

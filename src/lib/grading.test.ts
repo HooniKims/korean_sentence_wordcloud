@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { gradeChoices, summarizeIncorrect } from "./grading";
+import { buildStudentFeedback, gradeChoices, summarizeIncorrect } from "./grading";
 import type { AnalysisItem } from "./schemas";
 
 const items: AnalysisItem[] = [
@@ -23,5 +23,19 @@ describe("grading", () => {
     const result = gradeChoices(items, { w1: "명사", w2: "형용사" });
 
     expect(summarizeIncorrect(result)).toBe("가다: 형용사→동사");
+  });
+
+  it("builds student-facing feedback for incorrect answers", () => {
+    const result = gradeChoices(items, { w1: "명사", w2: "형용사" });
+
+    expect(buildStudentFeedback(items, { w1: "명사", w2: "형용사" }, result)).toEqual([
+      {
+        id: "w2",
+        surface: "가다",
+        lemma: "가다",
+        selected: "형용사",
+        expected: "동사"
+      }
+    ]);
   });
 });

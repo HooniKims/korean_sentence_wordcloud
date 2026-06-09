@@ -27,7 +27,7 @@ export function WordCloud({ entries, compact = false }: Props) {
             aria-hidden="true"
           />
           <span
-            className="font-semibold leading-none"
+            className="font-semibold leading-[1.5]"
             style={{
               color: entry.color,
               fontSize: compact ? Math.max(12, entry.size * 0.45) : entry.size
