@@ -9,15 +9,15 @@ type Props = {
 
 export function WordCloud({ entries, compact = false }: Props) {
   if (entries.length === 0) {
-    return <div className="rounded-md border border-dashed border-slate-300 p-8 text-center text-slate-500">아직 워드클라우드가 없습니다.</div>;
+    return <div className="rounded-md border border-dashed border-black/10 bg-white/70 p-8 text-center text-[#6e6e73]">아직 워드클라우드가 없습니다.</div>;
   }
 
   return (
-    <div className={`flex flex-wrap items-center justify-center gap-3 rounded-md bg-white shadow-sm ${compact ? "p-3" : "p-6"}`}>
+    <div className={`flex flex-wrap items-center justify-center gap-3 rounded-md border border-white/70 bg-white/90 shadow-[0_20px_70px_rgba(0,0,0,0.08)] ${compact ? "p-3" : "p-8"}`}>
       {entries.map((entry) => (
         <span
           key={entry.id}
-          className="group relative inline-flex items-center gap-1 rounded-md border bg-white px-2 py-1"
+          className="group relative inline-flex items-center gap-1.5 rounded-full border bg-white px-3 py-1.5"
           style={{ borderColor: entry.markerColor }}
           title={`${entry.text} · ${entry.expected ?? entry.pos} · ${entry.frequency}회`}
         >

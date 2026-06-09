@@ -87,8 +87,8 @@ export function TeacherDashboard({ initialRows }: Props) {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
       <section className="grid gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-white p-4 shadow-sm">
-          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-md border border-slate-300 px-3 py-2">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/70 bg-white/90 p-4 shadow-[0_16px_50px_rgba(0,0,0,0.07)]">
+          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-full border border-black/10 px-4 py-2 outline-none focus:border-[#0071e3] focus:ring-4 focus:ring-[#0071e3]/10">
             <option value="">전체 반</option>
             {classes.map((className) => (
               <option key={className} value={className}>
@@ -96,16 +96,16 @@ export function TeacherDashboard({ initialRows }: Props) {
               </option>
             ))}
           </select>
-          <button onClick={lockClass} className="rounded-md bg-slate-950 px-3 py-2 text-sm font-semibold text-white">
+          <button onClick={lockClass} className="rounded-full bg-[#1d1d1f] px-4 py-2 text-sm font-semibold text-white transition hover:bg-black">
             선택 반 전체 확정
           </button>
         </div>
 
         {error ? <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div> : null}
 
-        <div className="overflow-hidden rounded-md bg-white shadow-sm">
+        <div className="overflow-hidden rounded-md border border-white/70 bg-white/90 shadow-[0_20px_70px_rgba(0,0,0,0.08)]">
           <table className="w-full border-collapse text-sm">
-            <thead className="bg-slate-100 text-left">
+            <thead className="bg-[#f5f5f7] text-left text-[#6e6e73]">
               <tr>
                 <th className="p-3">학생</th>
                 <th className="p-3">상태</th>
@@ -116,9 +116,9 @@ export function TeacherDashboard({ initialRows }: Props) {
             </thead>
             <tbody>
               {visibleRows.map((row) => (
-                <tr key={`${row.className}-${row.studentNumber}-${row.studentName}`} className="border-t border-slate-100">
+                <tr key={`${row.className}-${row.studentNumber}-${row.studentName}`} className="border-t border-black/5 transition hover:bg-[#f5f5f7]/70">
                   <td className="p-3">
-                    <button className="text-left font-semibold text-slate-950" onClick={() => setSelected(row)}>
+                    <button className="text-left font-semibold text-[#1d1d1f]" onClick={() => setSelected(row)}>
                       {row.className} {row.studentNumber} {row.studentName}
                     </button>
                   </td>
@@ -128,7 +128,7 @@ export function TeacherDashboard({ initialRows }: Props) {
                     <WordCloud entries={row.wordcloudEntries.slice(0, 8)} compact />
                   </td>
                   <td className="p-3">
-                    <button disabled={row.locked} onClick={() => lockStudent(row)} className="rounded-md border border-slate-300 px-2 py-1 disabled:opacity-40">
+                    <button disabled={row.locked} onClick={() => lockStudent(row)} className="rounded-full border border-black/10 bg-white px-3 py-1.5 font-medium disabled:opacity-40">
                       확정
                     </button>
                   </td>
@@ -142,25 +142,25 @@ export function TeacherDashboard({ initialRows }: Props) {
       <aside className="grid content-start gap-4">
         {selected ? (
           <>
-            <section className="rounded-md bg-white p-4 shadow-sm">
+            <section className="rounded-md border border-white/70 bg-white/90 p-5 shadow-[0_16px_50px_rgba(0,0,0,0.07)]">
               <h2 className="text-xl font-bold">
                 {selected.className} {selected.studentNumber} {selected.studentName}
               </h2>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="mt-1 text-sm text-[#6e6e73]">
                 점수 {selected.score ?? "-"} · {selected.locked ? "확정됨" : "수정 가능"}
               </p>
               <p className="mt-2 text-sm text-red-700">{selected.incorrectSummary}</p>
             </section>
             <WordCloud entries={selected.wordcloudEntries} />
-            <section className="grid gap-3 rounded-md bg-white p-4 shadow-sm">
+            <section className="grid gap-3 rounded-md border border-white/70 bg-white/90 p-5 shadow-[0_16px_50px_rgba(0,0,0,0.07)]">
               <h3 className="font-semibold">정답 품사 수정</h3>
               {selected.analysisItems.map((item) => (
-                <div key={item.id} className="grid gap-2 border-t border-slate-100 pt-3">
+                <div key={item.id} className="grid gap-2 border-t border-black/5 pt-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-medium">{item.surface}</span>
-                    <span className="text-sm text-slate-500">학생 선택: {selected.studentChoices[item.id] ?? "-"}</span>
+                    <span className="text-sm text-[#6e6e73]">학생 선택: {selected.studentChoices[item.id] ?? "-"}</span>
                   </div>
-                  <select value={selected.answerKey[item.id] ?? item.pos} onChange={(event) => updateAnswer(item.id, event.target.value as KoreanPos)} className="rounded-md border border-slate-300 px-3 py-2">
+                  <select value={selected.answerKey[item.id] ?? item.pos} onChange={(event) => updateAnswer(item.id, event.target.value as KoreanPos)} className="rounded-full border border-black/10 px-4 py-2 outline-none focus:border-[#0071e3] focus:ring-4 focus:ring-[#0071e3]/10">
                     {KOREAN_POS.map((pos) => (
                       <option key={pos} value={pos}>
                         {pos}
@@ -172,7 +172,7 @@ export function TeacherDashboard({ initialRows }: Props) {
             </section>
           </>
         ) : (
-          <section className="rounded-md bg-white p-6 text-slate-500 shadow-sm">학생을 선택하세요.</section>
+          <section className="rounded-md border border-white/70 bg-white/90 p-6 text-[#6e6e73] shadow-[0_16px_50px_rgba(0,0,0,0.07)]">학생을 선택하세요.</section>
         )}
       </aside>
     </div>
