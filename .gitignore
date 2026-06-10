@@ -5,6 +5,8 @@ out/
 dist/
 .env
 .env*.local
+.evv.local
+mshsdiff.md
 coverage/
 .npm-cache/
 *.log
