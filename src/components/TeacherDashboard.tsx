@@ -10,6 +10,8 @@ type Props = {
   initialRows: SubmissionRecord[];
 };
 
+type StatusFilter = "all" | "submitted" | "missing" | "locked" | "needs-review";
+
 function identity(row: SubmissionRecord): StudentIdentity {
   return {
     className: row.className,
@@ -22,6 +24,7 @@ export function TeacherDashboard({ initialRows }: Props) {
   const [rows, setRows] = useState(initialRows);
   const [selected, setSelected] = useState<SubmissionRecord | null>(initialRows[0] ?? null);
   const [classFilter, setClassFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [error, setError] = useState("");
 
   async function refresh() {
@@ -41,7 +44,31 @@ export function TeacherDashboard({ initialRows }: Props) {
   }, []);
 
   const classes = useMemo(() => Array.from(new Set(rows.map((row) => row.className))).sort(), [rows]);
-  const visibleRows = (classFilter ? rows.filter((row) => row.className === classFilter) : rows).sort(
+  const classRows = classFilter ? rows.filter((row) => row.className === classFilter) : rows;
+  const submittedRows = classRows.filter((row) => Boolean(row.submittedAt));
+  const averageScore = submittedRows.length > 0 ? Math.round(submittedRows.reduce((sum, row) => sum + (row.score ?? 0), 0) / submittedRows.length) : undefined;
+  const summaryItems = [
+    { label: "전체", value: `${classRows.length}명` },
+    { label: "제출", value: `${submittedRows.length}명` },
+    { label: "미제출", value: `${classRows.filter((row) => !row.submittedAt).length}명` },
+    { label: "확정", value: `${classRows.filter((row) => row.locked).length}명` },
+    { label: "평균", value: averageScore === undefined ? "-" : `${averageScore}점` }
+  ];
+  const visibleRows = classRows.filter((row) => {
+    if (statusFilter === "submitted") {
+      return Boolean(row.submittedAt) && !row.locked;
+    }
+    if (statusFilter === "missing") {
+      return !row.submittedAt;
+    }
+    if (statusFilter === "locked") {
+      return row.locked;
+    }
+    if (statusFilter === "needs-review") {
+      return Boolean(row.incorrectSummary);
+    }
+    return true;
+  }).sort(
     (left, right) => left.className.localeCompare(right.className, "ko") || left.studentNumber.localeCompare(right.studentNumber, "ko")
   );
   const printRows = buildTeacherPrintRows(visibleRows);
@@ -63,6 +90,9 @@ export function TeacherDashboard({ initialRows }: Props) {
   async function lockClass() {
     if (!classFilter) {
       setError("반 전체 확정은 반을 먼저 선택해야 합니다.");
+      return;
+    }
+    if (!window.confirm(`${classFilter} 학생 ${classRows.length}명을 확정할까요? 확정 후 학생 수정이 막힙니다.`)) {
       return;
     }
     await fetch("/api/teacher/lock-class", {
@@ -95,29 +125,56 @@ export function TeacherDashboard({ initialRows }: Props) {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
       <section className="grid gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-cards)] bg-white p-5">
-          <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-[var(--color-haze-grey)] px-4 py-2 outline-none focus:border-[var(--color-action-blue)] focus:ring-4 focus:ring-[rgba(43,127,255,0.12)]">
-            <option value="">전체 반</option>
-            {classes.map((className) => (
-              <option key={className} value={className}>
-                {className}
-              </option>
+        <div className="grid gap-3 rounded-[var(--radius-cards)] bg-white p-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {summaryItems.map((item) => (
+              <div key={item.label} className="rounded-[var(--radius-buttons)] bg-[var(--color-haze-grey)] px-4 py-3">
+                <p className="text-xs font-medium text-[var(--color-charcoal-text)]/60">{item.label}</p>
+                <p className="mt-1 text-2xl font-semibold text-[var(--color-charcoal-text)]">
+                  {item.label} {item.value}
+                </p>
+              </div>
             ))}
-          </select>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <label className="grid gap-1 text-xs font-medium text-[var(--color-charcoal-text)]/70">
+                반 필터
+                <select value={classFilter} onChange={(event) => setClassFilter(event.target.value)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-[var(--color-haze-grey)] px-4 py-2 text-sm outline-none focus:border-[var(--color-action-blue)] focus:ring-4 focus:ring-[rgba(43,127,255,0.12)]">
+                  <option value="">전체 반</option>
+                  {classes.map((className) => (
+                    <option key={className} value={className}>
+                      {className}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-medium text-[var(--color-charcoal-text)]/70">
+                상태 필터
+                <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StatusFilter)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-[var(--color-haze-grey)] px-4 py-2 text-sm outline-none focus:border-[var(--color-action-blue)] focus:ring-4 focus:ring-[rgba(43,127,255,0.12)]">
+                  <option value="all">전체 상태</option>
+                  <option value="submitted">제출</option>
+                  <option value="missing">미제출</option>
+                  <option value="locked">확정</option>
+                  <option value="needs-review">오답 있음</option>
+                </select>
+              </label>
+            </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={printDashboard} className="rounded-[var(--radius-buttons)] border border-black/10 bg-white px-4 py-2 text-sm font-medium text-[var(--color-charcoal-text)] transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)]">
+            <button onClick={printDashboard} className="rounded-[var(--radius-buttons)] border border-black/10 bg-white px-4 py-2 text-sm font-medium text-[var(--color-charcoal-text)] transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] active:scale-[0.96] active:shadow-inner">
               출력
             </button>
-            <button onClick={lockClass} className="rounded-[var(--radius-buttons)] border border-[var(--color-action-blue)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--color-action-blue)] transition hover:bg-[rgba(43,127,255,0.08)]">
+            <button onClick={lockClass} className="rounded-[var(--radius-buttons)] border border-[var(--color-action-blue)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--color-action-blue)] transition hover:bg-[rgba(43,127,255,0.08)] active:scale-[0.96] active:shadow-inner">
               선택 반 전체 확정
             </button>
+          </div>
           </div>
         </div>
 
         {error ? <div className="rounded-[var(--radius-cards)] border border-red-200 bg-white p-3 text-sm text-red-700">{error}</div> : null}
 
         <div className="overflow-hidden rounded-[var(--radius-cards)] bg-white">
-          <table className="w-full border-collapse text-sm">
+          <table aria-label="학생 제출 현황" className="w-full border-collapse text-sm">
             <thead className="bg-[var(--color-haze-grey)] text-left text-[var(--color-charcoal-text)]">
               <tr>
                 <th className="p-3">학생</th>
@@ -141,7 +198,7 @@ export function TeacherDashboard({ initialRows }: Props) {
                     {row.imagePrompt ? "생성됨" : "-"}
                   </td>
                   <td className="p-3">
-                    <button disabled={row.locked} onClick={() => lockStudent(row)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-white px-3 py-1.5 font-medium transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] disabled:opacity-40">
+                    <button disabled={row.locked} onClick={() => lockStudent(row)} className="rounded-[var(--radius-buttons)] border border-black/10 bg-white px-3 py-1.5 font-medium transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] active:scale-[0.96] active:shadow-inner disabled:scale-100 disabled:opacity-40">
                       확정
                     </button>
                   </td>

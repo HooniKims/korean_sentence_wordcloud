@@ -17,7 +17,9 @@ const CONFIG = {
     "이미지 생성 프롬프트"
   ],
   rowHeight: 28,
-  columnWidths: [72, 90, 58, 150, 150, 180, 110, 110, 110, 110, 58, 140, 120, 180]
+  columnWidths: [72, 90, 58, 150, 150, 180, 110, 110, 110, 110, 58, 140, 120, 180],
+  scoreColumn: 11,
+  longTextColumns: [6, 7, 8, 9, 10, 12, 13, 14]
 };
 
 function onOpen() {
@@ -25,6 +27,8 @@ function onOpen() {
     .createMenu("품사 활동")
     .addItem("반별 탭 준비", "prepareClassTabs")
     .addItem("모든 반 학번순 정렬", "sortAllClassTabs")
+    .addItem("한줄 보기 서식 적용", "formatAllClassTabs")
+    .addItem("자동 한줄 서식 트리거 설치", "installCompactFormattingTrigger")
     .addToUi();
 }
 
@@ -64,6 +68,51 @@ function sortAllClassTabs() {
   SpreadsheetApp.getUi().alert("모든 반을 학번순으로 정렬했습니다.");
 }
 
+function formatAllClassTabs() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+
+  CONFIG.classTabs.forEach((className) => {
+    const sheet = spreadsheet.getSheetByName(className);
+    if (sheet) {
+      formatCompactRows_(sheet);
+    }
+  });
+
+  SpreadsheetApp.getUi().alert("모든 반을 한줄 보기 서식으로 정리했습니다.");
+}
+
+function installCompactFormattingTrigger() {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const existing = ScriptApp.getProjectTriggers().filter(
+    (trigger) => trigger.getHandlerFunction() === "handleSpreadsheetChange_"
+  );
+
+  if (existing.length === 0) {
+    ScriptApp.newTrigger("handleSpreadsheetChange_").forSpreadsheet(spreadsheet).onChange().create();
+  }
+
+  SpreadsheetApp.getUi().alert("학생 제출 후에도 한줄 보기 서식이 자동으로 다시 적용되도록 설정했습니다.");
+}
+
+function handleSpreadsheetChange_() {
+  const lock = LockService.getDocumentLock();
+  if (!lock.tryLock(5000)) {
+    return;
+  }
+
+  try {
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    CONFIG.classTabs.forEach((className) => {
+      const sheet = spreadsheet.getSheetByName(className);
+      if (sheet) {
+        formatCompactRows_(sheet);
+      }
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function getOrCreateSheet_(spreadsheet, sheetName) {
   return spreadsheet.getSheetByName(sheetName) || spreadsheet.insertSheet(sheetName);
 }
@@ -71,7 +120,7 @@ function getOrCreateSheet_(spreadsheet, sheetName) {
 function setupHeader_(sheet) {
   sheet.getRange(1, 1, 1, CONFIG.headers.length).setValues([CONFIG.headers]);
   sheet.setFrozenRows(1);
-  sheet.getRange(1, 1, 1, CONFIG.headers.length).setFontWeight("bold").setBackground("#f1f5f9").setWrap(true);
+  sheet.getRange(1, 1, 1, CONFIG.headers.length).setFontWeight("bold").setBackground("#f1f5f9").setWrap(false);
   sheet.getRange("A:A").setNumberFormat("@");
   sheet.getRange("B:B").setNumberFormat("@");
   sheet.getRange("C:C").setDataValidation(
@@ -103,14 +152,25 @@ function formatCompactRows_(sheet) {
   });
 
   const maxRows = sheet.getMaxRows();
+  sheet.setRowHeight(1, CONFIG.rowHeight);
   if (maxRows >= 2) {
     const dataRange = sheet.getRange(2, 1, maxRows - 1, CONFIG.headers.length);
     dataRange.setVerticalAlignment("middle");
-    if (SpreadsheetApp.WrapStrategy && SpreadsheetApp.WrapStrategy.CLIP) {
-      dataRange.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-    } else {
-      dataRange.setWrap(false);
-    }
+    setOneLineOverflow_(dataRange);
+    CONFIG.longTextColumns.forEach((column) => {
+      setOneLineOverflow_(sheet.getRange(2, column, maxRows - 1, 1));
+    });
+    sheet.getRange(2, CONFIG.scoreColumn, maxRows - 1, 1).setHorizontalAlignment("center").setFontWeight("bold").setNumberFormat("0");
     sheet.setRowHeights(2, maxRows - 1, CONFIG.rowHeight);
+  }
+}
+
+function setOneLineOverflow_(range) {
+  if (SpreadsheetApp.WrapStrategy && SpreadsheetApp.WrapStrategy.OVERFLOW) {
+    range.setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW);
+  } else if (SpreadsheetApp.WrapStrategy && SpreadsheetApp.WrapStrategy.CLIP) {
+    range.setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  } else {
+    range.setWrap(false);
   }
 }
