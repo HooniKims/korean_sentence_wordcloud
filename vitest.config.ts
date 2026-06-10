@@ -5,6 +5,9 @@ export default defineConfig({
   esbuild: {
     jsx: "automatic"
   },
+  test: {
+    exclude: ["**/node_modules/**", "**/.git/**", "**/.next/**", "**/.worktrees/**"]
+  },
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url))
