@@ -39,11 +39,15 @@ export default function StudentPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [hasRestoredProgress, setHasRestoredProgress] = useState(false);
+  const [copyMessage, setCopyMessage] = useState("");
 
   const allChosen = useMemo(
     () => items.length > 0 && items.every((item) => choices[item.id]),
     [choices, items]
   );
+  const canAnalyze = /^1[1-5]\d{2}$/.test(identity.studentNumber) && identity.studentName.trim().length > 0 && transcriptText.trim().length >= 20;
+  const currentStep = imagePrompt ? 3 : items.length > 0 ? 2 : 1;
+  const loadingMessage = items.length > 0 ? "AI가 제출 결과와 이미지 프롬프트를 정리하고 있습니다." : "AI가 중학교 수준에서 명확한 단어만 추리고 있습니다.";
 
   const submissionComplete = isSubmissionComplete({
     identity,
@@ -177,6 +181,15 @@ export default function StudentPage() {
     }
   }
 
+  async function copyPrompt() {
+    if (!imagePrompt) {
+      return;
+    }
+
+    await navigator.clipboard.writeText(imagePrompt);
+    setCopyMessage("복사되었습니다.");
+  }
+
   return (
     <main className="min-h-screen bg-[var(--color-sky-canvas)] text-[var(--color-charcoal-text)]">
       <nav className="sticky top-0 z-20 border-b border-white/25 bg-white/80 backdrop-blur-xl">
@@ -184,24 +197,34 @@ export default function StudentPage() {
           <Link className="font-medium text-[var(--color-charcoal-text)]" href="/">
             품사 Wordcloud
           </Link>
-          <Link className="rounded-[var(--radius-buttons)] border border-[var(--color-charcoal-text)] px-4 py-1.5 font-medium text-[var(--color-charcoal-text)] transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)]" href="/teacher">
+          <Link className="rounded-[var(--radius-buttons)] border border-[var(--color-charcoal-text)] px-4 py-1.5 font-medium text-[var(--color-charcoal-text)] transition hover:border-[var(--color-action-blue)] hover:text-[var(--color-action-blue)] active:scale-[0.96] active:shadow-inner" href="/teacher">
             교사용
           </Link>
         </div>
       </nav>
 
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 pb-16 pt-10">
-        <header className="mx-auto max-w-3xl text-center">
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-16 pt-8">
+        <header className="mx-auto grid max-w-3xl gap-5 text-center">
           <p className="text-sm font-medium text-white/80">한국어 9품사 수업 활동</p>
-          <h1 className="mt-3 text-5xl font-medium leading-[1.5] text-[var(--color-cloud-white)] sm:text-6xl">
-            말 속 단어를 찾고,
-            <br />
-            품사를 스스로 살펴봅니다.
+          <h1 className="text-4xl font-medium leading-[1.2] text-[var(--color-cloud-white)] sm:text-5xl">
+            말 속 단어의 품사를 고릅니다.
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl rounded-[var(--radius-cards)] bg-white/90 p-5 text-base leading-[1.5] text-[var(--color-charcoal-text)] backdrop-blur-xl">
-            <span className="block">녹음한 말을 글로 옮겨 붙이면, AI가 품사 학습에 알맞은 단어를 추립니다.</span>
-            <span className="mt-1 block">학생은 단어마다 품사를 고르고, 마지막에 이미지 생성용 프롬프트를 받습니다.</span>
-          </p>
+          <ol className="grid gap-2 rounded-[var(--radius-cards)] bg-white/90 p-3 text-left text-sm backdrop-blur-xl sm:grid-cols-3">
+            {["입력", "품사 선택", "제출 완료"].map((label, index) => {
+              const step = index + 1;
+              const active = step === currentStep;
+              return (
+                <li
+                  key={label}
+                  className={`rounded-[var(--radius-buttons)] px-3 py-2 font-semibold ${
+                    active ? "bg-[rgba(43,127,255,0.1)] text-[var(--color-action-blue)]" : "text-[var(--color-charcoal-text)]/70"
+                  }`}
+                >
+                  {step} {label}
+                </li>
+              );
+            })}
+          </ol>
         </header>
 
         <form onSubmit={analyze} className="grid gap-5 rounded-[var(--radius-cards)] bg-white p-5">
@@ -232,9 +255,18 @@ export default function StudentPage() {
               onChange={(event) => setTranscriptText(event.target.value)}
             />
           </label>
-          <button disabled={isLoading} className="w-fit rounded-[var(--radius-buttons)] bg-[var(--color-action-blue)] px-6 py-3 text-base font-semibold text-white shadow-[0_12px_28px_rgba(43,127,255,0.28)] transition hover:-translate-y-0.5 hover:bg-[#1f6ff0] hover:shadow-[0_16px_34px_rgba(43,127,255,0.34)] focus:outline-none focus:ring-4 focus:ring-[rgba(43,127,255,0.24)] active:translate-y-0 disabled:translate-y-0 disabled:opacity-60">
+          <div className="flex flex-wrap items-center gap-3">
+            <button disabled={!canAnalyze || isLoading} className="w-fit rounded-[var(--radius-buttons)] bg-[var(--color-action-blue)] px-6 py-3 text-base font-semibold text-white shadow-[0_12px_28px_rgba(43,127,255,0.28)] transition hover:-translate-y-0.5 hover:bg-[#1f6ff0] hover:shadow-[0_16px_34px_rgba(43,127,255,0.34)] focus:outline-none focus:ring-4 focus:ring-[rgba(43,127,255,0.24)] active:translate-y-0 active:scale-[0.97] active:shadow-inner disabled:translate-y-0 disabled:scale-100 disabled:opacity-60">
             {isLoading ? "분석 중..." : "단어 추출하기"}
-          </button>
+            </button>
+            {!canAnalyze ? <p className="text-sm text-[var(--color-charcoal-text)]/65">학번 4자리, 이름, 20자 이상의 글을 입력하세요.</p> : null}
+            {isLoading ? (
+              <p className="inline-flex items-center gap-2 rounded-[var(--radius-buttons)] bg-[rgba(43,127,255,0.08)] px-3 py-2 text-sm font-medium text-[var(--color-action-blue)]">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-action-blue)]" aria-hidden="true" />
+                {loadingMessage}
+              </p>
+            ) : null}
+          </div>
         </form>
 
         {error ? <div className="rounded-[var(--radius-cards)] border border-red-200 bg-white p-4 text-red-700">{error}</div> : null}
@@ -246,9 +278,15 @@ export default function StudentPage() {
               <p className="mt-2 text-white/80">각 단어가 어떤 품사인지 하나씩 고르세요.</p>
             </div>
             <PosPicker items={items} choices={choices} onChange={setChoices} />
-            <button disabled={!allChosen || isLoading} onClick={submitChoices} className="mx-auto w-fit rounded-[var(--radius-buttons)] bg-white px-7 py-3 text-base font-semibold text-[var(--color-action-blue)] shadow-[0_14px_32px_rgba(0,0,0,0.18)] transition hover:-translate-y-0.5 hover:bg-[var(--color-haze-grey)] hover:shadow-[0_18px_38px_rgba(0,0,0,0.22)] focus:outline-none focus:ring-4 focus:ring-white/35 active:translate-y-0 disabled:translate-y-0 disabled:opacity-50">
+            <button disabled={!allChosen || isLoading} onClick={submitChoices} className="mx-auto w-fit rounded-[var(--radius-buttons)] bg-white px-7 py-3 text-base font-semibold text-[var(--color-action-blue)] shadow-[0_14px_32px_rgba(0,0,0,0.18)] transition hover:-translate-y-0.5 hover:bg-[var(--color-haze-grey)] hover:shadow-[0_18px_38px_rgba(0,0,0,0.22)] focus:outline-none focus:ring-4 focus:ring-white/35 active:translate-y-0 active:scale-[0.97] active:shadow-inner disabled:translate-y-0 disabled:scale-100 disabled:opacity-50">
               {isLoading ? "제출 중..." : "제출하고 프롬프트 받기"}
             </button>
+            {isLoading ? (
+              <p className="mx-auto inline-flex items-center gap-2 rounded-[var(--radius-buttons)] bg-white/90 px-3 py-2 text-sm font-medium text-[var(--color-action-blue)]">
+                <span className="h-2 w-2 animate-pulse rounded-full bg-[var(--color-action-blue)]" aria-hidden="true" />
+                {loadingMessage}
+              </p>
+            ) : null}
           </section>
         ) : null}
 
@@ -262,11 +300,22 @@ export default function StudentPage() {
                   : "아래 내용을 복사해 이미지 생성 도구에 붙여넣으면 됩니다."}
               </p>
             </div>
-            <textarea
-              readOnly
-              className="min-h-80 rounded-[var(--radius-cards)] border border-white/70 bg-white p-5 leading-[1.5] text-[var(--color-charcoal-text)] outline-none"
-              value={imagePrompt}
-            />
+            <div className="grid gap-3 rounded-[var(--radius-cards)] bg-white p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-lg font-medium">이미지 생성 프롬프트</h3>
+                <div className="flex items-center gap-3">
+                  {copyMessage ? <span className="text-sm font-medium text-[var(--color-action-blue)]">{copyMessage}</span> : null}
+                  <button type="button" onClick={copyPrompt} className="rounded-[var(--radius-buttons)] border border-[var(--color-action-blue)] bg-transparent px-4 py-2 text-sm font-medium text-[var(--color-action-blue)] transition hover:bg-[rgba(43,127,255,0.08)] focus:outline-none focus:ring-4 focus:ring-[rgba(43,127,255,0.16)] active:scale-[0.96] active:shadow-inner">
+                    프롬프트 복사하기
+                  </button>
+                </div>
+              </div>
+              <textarea
+                readOnly
+                className="min-h-80 rounded-[var(--radius-inputs)] border border-black/10 bg-[var(--color-haze-grey)] p-4 leading-[1.5] text-[var(--color-charcoal-text)] outline-none"
+                value={imagePrompt}
+              />
+            </div>
             <section className="rounded-[var(--radius-cards)] bg-white p-5 text-[var(--color-charcoal-text)]">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>

@@ -29,9 +29,8 @@ export function PosPicker({ items, choices, onChange }: Props) {
               <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                 <span className="text-[var(--color-charcoal-text)]/60">빈도 {item.frequency}회</span>
                 {item.lemma ? (
-                  <span className="inline-flex items-center gap-1 rounded-[var(--radius-buttons)] bg-[rgba(43,127,255,0.12)] px-2.5 py-1 font-semibold text-[var(--color-action-blue)] ring-1 ring-[rgba(43,127,255,0.24)]">
-                    <span className="text-xs text-[var(--color-action-blue)]/70">기본형</span>
-                    <span>{item.lemma}</span>
+                  <span className="inline-flex items-center rounded-[var(--radius-buttons)] bg-[rgba(43,127,255,0.14)] px-3 py-1.5 text-base font-semibold text-[var(--color-action-blue)] shadow-[0_8px_18px_rgba(43,127,255,0.16)] ring-1 ring-[rgba(43,127,255,0.28)]">
+                    기본형 {item.lemma}
                   </span>
                 ) : null}
               </div>
@@ -46,7 +45,7 @@ export function PosPicker({ items, choices, onChange }: Props) {
                   key={pos}
                   type="button"
                   onClick={() => choose(item.id, pos)}
-                  className={`rounded-[var(--radius-buttons)] border px-3 py-2 text-sm font-medium transition ${
+                  className={`rounded-[var(--radius-buttons)] border px-3 py-2 text-sm font-medium shadow-sm transition active:scale-[0.96] active:shadow-inner ${
                     selected ? "bg-[rgba(43,127,255,0.08)] text-[var(--color-action-blue)]" : "bg-white text-[var(--color-charcoal-text)] hover:bg-[var(--color-haze-grey)]"
                   }`}
                   style={{ borderColor: selected ? "var(--color-action-blue)" : POS_COLORS[pos] }}

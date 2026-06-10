@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { buildAnswerKey, buildStudentFeedback, gradeChoices, summarizeIncorrect } from "@/lib/grading";
 import { submitRequestSchema } from "@/lib/schemas";
 import { getStorage } from "@/lib/storage";
-import { buildWordcloudEntries, buildWordcloudImagePrompt } from "@/lib/wordcloud";
+import { buildTranscriptWordcloudEntries, buildWordcloudImagePrompt } from "@/lib/wordcloud";
 
 export async function POST(request: Request) {
   try {
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
 
     const answerKey = buildAnswerKey(input.items);
     const grading = gradeChoices(input.items, input.choices, answerKey);
-    const wordcloudEntries = buildWordcloudEntries(input.items, input.choices, answerKey, grading);
+    const wordcloudEntries = buildTranscriptWordcloudEntries(input.transcriptText, input.items, input.choices, answerKey, grading);
     const imagePrompt = buildWordcloudImagePrompt(input, wordcloudEntries);
     const saved = await storage.saveSubmission({
       className: input.className,

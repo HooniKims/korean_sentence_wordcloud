@@ -9,7 +9,7 @@ import {
   type AnswerKey,
   type StudentIdentity
 } from "../schemas";
-import { buildWordcloudEntries, buildWordcloudImagePrompt } from "../wordcloud";
+import { buildTranscriptWordcloudEntries, buildWordcloudEntries, buildWordcloudImagePrompt } from "../wordcloud";
 import type { SaveSubmissionInput, Storage, StudentRecord, SubmissionRecord } from "./types";
 
 const HEADERS = [
@@ -259,7 +259,7 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
       }
 
       const grading = gradeChoices(detail.analysisItems, detail.studentChoices, answerKey);
-      const wordcloudEntries = buildWordcloudEntries(detail.analysisItems, detail.studentChoices, answerKey, grading);
+      const wordcloudEntries = buildTranscriptWordcloudEntries(detail.transcriptText ?? "", detail.analysisItems, detail.studentChoices, answerKey, grading);
       const imagePrompt = buildWordcloudImagePrompt(detail, wordcloudEntries);
       const updated: SaveSubmissionInput = {
         className: detail.className,
