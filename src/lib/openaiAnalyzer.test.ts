@@ -304,6 +304,62 @@ describe("openaiAnalyzer", () => {
     ]);
   });
 
+  it("infers basic verb forms from common spoken conjugations instead of dropping them", async () => {
+    const items = await analyzeKoreanText("나는 밥을 먹었다. 친구가 운동장을 달리는 모습을 보았다.", {
+      questionCount: 3,
+      random: () => 0.99,
+      client: mockClient(
+        JSON.stringify({
+          items: [
+            { surface: "먹었다", lemma: "먹었다", pos: "동사", frequency: 1, reason: "종결형", confidence: 0.9 },
+            { surface: "달리는", lemma: "달리는", pos: "동사", frequency: 1, reason: "관형형", confidence: 0.9 },
+            { surface: "보았다", lemma: "보았다", pos: "동사", frequency: 1, reason: "용언의 활용형", confidence: 0.9 }
+          ]
+        })
+      )
+    });
+
+    expect(items).toEqual([
+      expect.objectContaining({ surface: "먹다", lemma: "먹다", pos: "동사" }),
+      expect.objectContaining({ surface: "달리다", lemma: "달리다", pos: "동사" }),
+      expect.objectContaining({ surface: "보다", lemma: "보다", pos: "동사" })
+    ]);
+  });
+
+  it("normalizes predicate modifiers mislabeled as determiners to basic adjective questions", async () => {
+    const items = await analyzeKoreanText("재미있는 이야기를 들었다. 기분이 좋았다.", {
+      questionCount: 2,
+      random: () => 0.99,
+      client: mockClient(
+        JSON.stringify({
+          items: [
+            { surface: "재미있는", lemma: "재미있다", pos: "관형사", frequency: 1, reason: "이야기를 직접 꾸밈", confidence: 0.9 },
+            { surface: "좋았다", lemma: "좋았다", pos: "형용사", frequency: 1, reason: "상태를 나타냄", confidence: 0.9 }
+          ]
+        })
+      )
+    });
+
+    expect(items).toEqual([
+      expect.objectContaining({ surface: "재미있다", lemma: "재미있다", pos: "형용사" }),
+      expect.objectContaining({ surface: "좋다", lemma: "좋다", pos: "형용사" })
+    ]);
+  });
+
+  it("normalizes possessive pronoun forms to pronoun questions", async () => {
+    const items = await analyzeKoreanText("저의 장래 희망은 의사입니다.", {
+      questionCount: 1,
+      random: () => 0.99,
+      client: mockClient(
+        JSON.stringify({
+          items: [{ surface: "저의", lemma: "저의", pos: "관형사", frequency: 1, reason: "뒤의 말을 꾸밈", confidence: 0.9 }]
+        })
+      )
+    });
+
+    expect(items).toEqual([expect.objectContaining({ surface: "저", lemma: "저", pos: "대명사" })]);
+  });
+
   it("replaces ambiguous spoken POS forms with easier middle-school display forms", async () => {
     const items = await analyzeKoreanText("두 권은 있습니다. 아! 충분히 긴 글입니다.", {
       questionCount: 3,
@@ -361,6 +417,24 @@ describe("openaiAnalyzer", () => {
     expect(items).toHaveLength(20);
     expect(items[0].surface).toBe("단어25");
     expect(items[19].surface).toBe("단어6");
+  });
+
+  it("returns enough clear questions when fewer than 20 survive filtering", async () => {
+    const responseItems = Array.from({ length: 19 }, (_, index) => ({
+      surface: `단어${index + 1}`,
+      lemma: `단어${index + 1}`,
+      pos: "명사",
+      frequency: index + 1,
+      reason: "대상 이름",
+      confidence: 0.9
+    }));
+
+    const items = await analyzeKoreanText(transcriptWithWords(responseItems.map((item) => item.surface)), {
+      client: mockClient(JSON.stringify({ items: responseItems })),
+      random: () => 0.99
+    });
+
+    expect(items).toHaveLength(19);
   });
 
   it("keeps POS questions balanced when one POS has many more candidates", async () => {
@@ -549,7 +623,7 @@ describe("openaiAnalyzer", () => {
           })
         )
       })
-    ).rejects.toThrow("중학교 수준에서 명확한 품사 문제를 2개 만들 수 없습니다.");
+    ).rejects.toThrow("중학교 수준에서 명확한 품사 문제를 최소 2개 만들 수 없습니다.");
   });
 
   it("rejects unsupported POS labels", async () => {

@@ -6,6 +6,7 @@ import { analysisItemsSchema, type AnalysisItem } from "./schemas";
 type OpenAIClient = Pick<OpenAI, "chat">;
 
 const OPENAI_ANALYSIS_MODEL = "gpt-5.4-nano";
+const MINIMUM_QUESTION_COUNT = 12;
 const SUPPLEMENTAL_CANDIDATES: Array<{
   surface: string;
   lemma: string;
@@ -111,7 +112,7 @@ function isPredicativeParticleCandidate(item: AnalysisItem): boolean {
 function isConjugatedPredicateCandidate(item: AnalysisItem): boolean {
   const text = `${item.surface} ${item.lemma} ${item.reason}`.replace(/\s+/g, "");
   const canBeReplacedWithBasicForm = (item.pos === "동사" || item.pos === "형용사") && item.lemma.trim().endsWith("다");
-  if (canBeReplacedWithBasicForm && !/(어미대입|불규칙활용|본용언|보조용언|보조동사|보조형용사|버렸다)/.test(text)) {
+  if (canBeReplacedWithBasicForm && !/(어미대입|불규칙활용|본용언|보조용언|보조동사|보조형용사)/.test(text)) {
     return false;
   }
 
@@ -160,13 +161,108 @@ function normalizeFrequency(value: unknown): number {
   return Math.floor(numberValue);
 }
 
+function isLikelyConjugatedPredicate(word: string): boolean {
+  return /(았다|었다|였다|했다|았다|먹었다|보았다|갔다|왔다|했다|습니다|습니까|어요|아요|는|은|ㄴ|고)$/.test(word);
+}
+
+function inferPredicateLemma(surface: string, pos: unknown): string {
+  if (pos !== "동사" && pos !== "형용사") {
+    return "";
+  }
+
+  const word = surface.trim().replace(/[.!?]+$/g, "");
+  if (!word) {
+    return "";
+  }
+
+  const known: Record<string, string> = {
+    먹었다: "먹다",
+    먹었어요: "먹다",
+    보았다: "보다",
+    봤다: "보다",
+    봤어요: "보다",
+    갔다: "가다",
+    갔어요: "가다",
+    왔다: "오다",
+    왔어요: "오다",
+    했다: "하다",
+    했어요: "하다",
+    읽었다: "읽다",
+    읽었어요: "읽다",
+    썼다: "쓰다",
+    썼어요: "쓰다",
+    들었다: "듣다",
+    들었어요: "듣다",
+    걸었다: "걷다",
+    걸었어요: "걷다",
+    예뻤다: "예쁘다",
+    예뻤어요: "예쁘다"
+  };
+  if (known[word]) {
+    return known[word];
+  }
+
+  const rules: Array<[RegExp, string]> = [
+    [/^(.+)하는$/, "$1하다"],
+    [/^(.+)했다$/, "$1하다"],
+    [/^(.+)했어요$/, "$1하다"],
+    [/^(.+)하였다$/, "$1하다"],
+    [/^(.+)하였습니다$/, "$1하다"],
+    [/^(.+)했습니다$/, "$1하다"],
+    [/^(.+)이었다$/, "$1이다"],
+    [/^(.+)였다$/, "$1이다"],
+    [/^(.+)았다$/, "$1다"],
+    [/^(.+)었다$/, "$1다"],
+    [/^(.+)였어요$/, "$1이다"],
+    [/^(.+)았어요$/, "$1다"],
+    [/^(.+)었어요$/, "$1다"],
+    [/^(.+)습니다$/, "$1다"],
+    [/^(.+)어요$/, "$1다"],
+    [/^(.+)아요$/, "$1다"],
+    [/^(.+)는다$/, "$1다"],
+    [/^(.+)ㄴ다$/, "$1다"],
+    [/^(.+)고$/, "$1다"],
+    [/^(.+)는$/, "$1다"],
+    [/^(.+)은$/, "$1다"],
+    [/^(.+)ㄴ$/, "$1다"]
+  ];
+
+  for (const [pattern, replacement] of rules) {
+    const lemma = word.replace(pattern, replacement);
+    if (lemma !== word && lemma.length >= 2 && lemma.endsWith("다")) {
+      return lemma;
+    }
+  }
+
+  return "";
+}
+
+function normalizeDisplayedPos(record: Record<string, unknown>, surface: string): unknown {
+  const lemma = typeof record.lemma === "string" ? record.lemma.trim() : "";
+  if (/^(저|나|너|우리)의$/.test(surface.trim()) || /^(저|나|너|우리)의$/.test(lemma)) {
+    return "대명사";
+  }
+  if (record.pos === "관형사" && (lemma.endsWith("다") || surface.endsWith("다"))) {
+    return "형용사";
+  }
+
+  return record.pos;
+}
+
 function normalizeDisplayedSurface(record: Record<string, unknown>): string {
   const surface = String(record.surface ?? "word");
   const lemma = typeof record.lemma === "string" ? record.lemma.trim() : "";
-  const pos = record.pos;
+  const normalizedPos = normalizeDisplayedPos(record, surface);
+  const inferredLemma = lemma.endsWith("다") && !isLikelyConjugatedPredicate(lemma) ? lemma : inferPredicateLemma(surface, normalizedPos) || inferPredicateLemma(lemma, normalizedPos);
+  const pos = normalizedPos;
 
-  if ((pos === "동사" || pos === "형용사") && lemma.endsWith("다")) {
-    return lemma;
+  if ((pos === "동사" || pos === "형용사") && inferredLemma.endsWith("다")) {
+    return inferredLemma;
+  }
+
+  const possessivePronoun = surface.trim().match(/^(저|나|너|우리)의$/);
+  if (possessivePronoun) {
+    return possessivePronoun[1];
   }
 
   if (pos === "수사") {
@@ -198,6 +294,14 @@ function normalizeDisplayedSurface(record: Record<string, unknown>): string {
 function normalizeDisplayedLemma(record: Record<string, unknown>, surface: string): string {
   const lemma = typeof record.lemma === "string" ? record.lemma.trim() : "";
   const pos = record.pos;
+
+  if (/^(저|나|너|우리)$/.test(surface)) {
+    return surface;
+  }
+
+  if ((pos === "동사" || pos === "형용사") && surface.endsWith("다")) {
+    return surface;
+  }
 
   if (pos === "수사" && /^(하나|둘|셋|넷)$/.test(surface)) {
     return surface;
@@ -395,11 +499,12 @@ export async function analyzeKoreanText(
     const record = item as Record<string, unknown>;
     const surface = normalizeDisplayedSurface(record);
     const lemma = normalizeDisplayedLemma(record, surface);
+    const pos = normalizeDisplayedPos(record, surface);
     return {
       id: typeof record.id === "string" ? record.id : itemId(surface, index),
       surface,
       lemma,
-      pos: record.pos,
+      pos,
       frequency: normalizeFrequency(record.frequency),
       reason: record.reason ?? "",
       confidence: record.confidence ?? 0.5
@@ -413,9 +518,10 @@ export async function analyzeKoreanText(
     .filter(isSafeMiddleSchoolCandidate);
 
   const selectedItems = selectBalancedItems(dedupeByDisplayedWord(safeItems), questionCount);
+  const minimumQuestionCount = Math.min(questionCount, MINIMUM_QUESTION_COUNT);
 
-  if (selectedItems.length < questionCount) {
-    throw new Error(`중학교 수준에서 명확한 품사 문제를 ${questionCount}개 만들 수 없습니다.`);
+  if (selectedItems.length < minimumQuestionCount) {
+    throw new Error(`중학교 수준에서 명확한 품사 문제를 최소 ${minimumQuestionCount}개 만들 수 없습니다.`);
   }
 
   return shuffleItems(selectedItems, options.random ?? Math.random);
