@@ -6,7 +6,13 @@ export default defineConfig({
     jsx: "automatic"
   },
   test: {
-    exclude: ["**/node_modules/**", "**/.git/**", "**/.next/**", "**/.worktrees/**"]
+    exclude: ["**/node_modules/**", "**/.git/**", "**/.next/**", "**/.worktrees/**"],
+    setupFiles: ["./src/test/setup.ts"],
+    environmentOptions: {
+      jsdom: {
+        url: "http://localhost"
+      }
+    }
   },
   resolve: {
     alias: {

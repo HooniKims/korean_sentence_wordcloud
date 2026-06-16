@@ -26,6 +26,7 @@ export function TeacherDashboard({ initialRows }: Props) {
   const [classFilter, setClassFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [error, setError] = useState("");
+  const [scoreDraft, setScoreDraft] = useState(String(initialRows[0]?.score ?? ""));
 
   async function refresh() {
     const response = await fetch("/api/teacher/roster");
@@ -42,6 +43,10 @@ export function TeacherDashboard({ initialRows }: Props) {
     const timer = window.setInterval(refresh, 5000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setScoreDraft(String(selected?.score ?? ""));
+  }, [selected]);
 
   const classes = useMemo(() => Array.from(new Set(rows.map((row) => row.className))).sort(), [rows]);
   const classRows = classFilter ? rows.filter((row) => row.className === classFilter) : rows;
@@ -121,6 +126,55 @@ export function TeacherDashboard({ initialRows }: Props) {
       setError(data.error ?? "정답 수정에 실패했습니다.");
     }
   }
+
+  async function updateScore() {
+    if (!selected) {
+      return;
+    }
+    const score = Number(scoreDraft);
+    if (!Number.isFinite(score) || score < 0 || score > 100) {
+      setError("점수는 0점부터 100점까지 입력하세요.");
+      return;
+    }
+
+    const response = await fetch("/api/teacher/score", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identity: identity(selected), score })
+    });
+    const data = await response.json();
+    if (response.ok) {
+      setSelected(data.detail);
+      setRows((currentRows) =>
+        currentRows.map((row) =>
+          row.className === selected.className &&
+          row.studentNumber === selected.studentNumber &&
+          row.studentName === selected.studentName
+            ? data.detail
+            : row
+        )
+      );
+      setError("");
+      await refresh();
+    } else {
+      setError(data.error ?? "점수 수정에 실패했습니다.");
+    }
+  }
+
+  const selectedAnswerRows = selected
+    ? selected.analysisItems.map((item) => {
+        const expected = selected.answerKey[item.id] ?? item.pos;
+        const actual = selected.studentChoices[item.id];
+        return {
+          item,
+          expected,
+          actual,
+          isCorrect: actual === expected
+        };
+      })
+    : [];
+  const correctAnswerRows = selectedAnswerRows.filter((row) => row.isCorrect);
+  const incorrectAnswerRows = selectedAnswerRows.filter((row) => !row.isCorrect);
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
@@ -220,6 +274,50 @@ export function TeacherDashboard({ initialRows }: Props) {
                 점수 {selected.score ?? "-"} · {selected.locked ? "확정됨" : "수정 가능"}
               </p>
               <p className="mt-2 text-sm text-red-700">{selected.incorrectSummary}</p>
+              <div className="mt-4 flex flex-wrap items-end gap-2">
+                <label className="grid gap-1 text-xs font-medium text-[var(--color-charcoal-text)]/70">
+                  점수 수정
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={scoreDraft}
+                    onChange={(event) => setScoreDraft(event.target.value)}
+                    className="w-28 rounded-[var(--radius-buttons)] border border-black/10 bg-[var(--color-haze-grey)] px-3 py-2 text-sm outline-none focus:border-[var(--color-action-blue)] focus:ring-4 focus:ring-[rgba(43,127,255,0.12)]"
+                  />
+                </label>
+                <button onClick={updateScore} className="rounded-[var(--radius-buttons)] border border-[var(--color-action-blue)] bg-[var(--color-action-blue)] px-4 py-2 text-sm font-medium text-white transition hover:brightness-95 active:scale-[0.96] active:shadow-inner">
+                  점수 저장
+                </button>
+              </div>
+            </section>
+            <section aria-label="정답 문항" className="grid gap-3 rounded-[var(--radius-cards)] bg-white p-5">
+              <h3 className="font-medium">정답 문항</h3>
+              {correctAnswerRows.length > 0 ? (
+                correctAnswerRows.map(({ item, actual, expected }) => (
+                  <div key={item.id} className="grid gap-1 border-t border-black/5 pt-3 text-sm">
+                    <span className="font-medium">{item.surface}</span>
+                    <span className="text-[var(--color-charcoal-text)]/70">학생 선택: {actual ?? "미선택"}</span>
+                    <span className="text-[var(--color-charcoal-text)]/70">정답: {expected}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-[var(--color-charcoal-text)]/60">정답 문항이 없습니다.</p>
+              )}
+            </section>
+            <section aria-label="오답 문항" className="grid gap-3 rounded-[var(--radius-cards)] bg-white p-5">
+              <h3 className="font-medium">오답 문항</h3>
+              {incorrectAnswerRows.length > 0 ? (
+                incorrectAnswerRows.map(({ item, actual, expected }) => (
+                  <div key={item.id} className="grid gap-1 border-t border-black/5 pt-3 text-sm">
+                    <span className="font-medium">{item.surface}</span>
+                    <span className="text-red-700">학생 선택: {actual ?? "미선택"}</span>
+                    <span className="text-[var(--color-charcoal-text)]/70">정답: {expected}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-[var(--color-charcoal-text)]/60">오답 문항이 없습니다.</p>
+              )}
             </section>
             <section className="grid gap-3 rounded-[var(--radius-cards)] bg-white p-5">
               <h3 className="font-medium">이미지 생성 프롬프트</h3>

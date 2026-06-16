@@ -16,11 +16,20 @@ const rows: SubmissionRecord[] = [
     studentName: "김학생",
     locked: false,
     submittedAt: "2026-06-10T00:00:00.000Z",
-    analysisItems: [],
-    studentChoices: {},
-    answerKey: {},
+    analysisItems: [
+      { id: "w1", surface: "학교", lemma: "학교", pos: "명사", frequency: 1, reason: "대상 이름", confidence: 1 },
+      { id: "w2", surface: "읽다", lemma: "읽다", pos: "동사", frequency: 1, reason: "동작", confidence: 1 }
+    ],
+    studentChoices: { w1: "명사", w2: "형용사" },
+    answerKey: { w1: "명사", w2: "동사" },
     score: 80,
-    incorrectSummary: "학교: 명사",
+    grading: {
+      correctCount: 1,
+      totalCount: 2,
+      score: 50,
+      incorrectItems: [{ id: "w2", surface: "읽다", expected: "동사", actual: "형용사" }]
+    },
+    incorrectSummary: "읽다: 형용사→동사",
     wordcloudEntries: [],
     imagePrompt: "프롬프트"
   },
@@ -96,5 +105,53 @@ describe("TeacherDashboard", () => {
       "/api/teacher/lock-class",
       expect.objectContaining({ method: "POST" })
     );
+  });
+
+  test("shows selected student's correct and incorrect choices separately", () => {
+    render(<TeacherDashboard initialRows={rows} />);
+
+    const correctSection = screen.getByRole("region", { name: "정답 문항" });
+    expect(within(correctSection).getByText("학교")).toBeInTheDocument();
+    expect(within(correctSection).getByText("학생 선택: 명사")).toBeInTheDocument();
+    expect(within(correctSection).getByText("정답: 명사")).toBeInTheDocument();
+
+    const incorrectSection = screen.getByRole("region", { name: "오답 문항" });
+    expect(within(incorrectSection).getByText("읽다")).toBeInTheDocument();
+    expect(within(incorrectSection).getByText("학생 선택: 형용사")).toBeInTheDocument();
+    expect(within(incorrectSection).getByText("정답: 동사")).toBeInTheDocument();
+  });
+
+  test("saves a teacher-edited score without changing the student's saved answers", async () => {
+    const updated = { ...rows[0], score: 90, grading: { ...rows[0].grading!, score: 90 } };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/teacher/score") {
+        return {
+          ok: true,
+          json: async () => ({ detail: updated })
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ rows: [updated, ...rows.slice(1)] })
+      };
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TeacherDashboard initialRows={rows} />);
+
+    fireEvent.change(screen.getByLabelText("점수 수정"), { target: { value: "90" } });
+    fireEvent.click(screen.getByRole("button", { name: "점수 저장" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/teacher/score",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          identity: { className: "1반", studentNumber: "1101", studentName: "김학생" },
+          score: 90
+        })
+      })
+    );
+    expect(await screen.findByText("점수 90 · 수정 가능")).toBeInTheDocument();
   });
 });

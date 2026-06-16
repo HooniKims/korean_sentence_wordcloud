@@ -129,6 +129,31 @@ function submissionToRow(input: SaveSubmissionInput, locked: boolean, now: strin
   ];
 }
 
+function scoreAdjustedSubmissionToRow(detail: SubmissionRecord, score: number, now: string): string[] {
+  const grading = detail.grading ?? gradeChoices(detail.analysisItems, detail.studentChoices, detail.answerKey);
+  const adjustedGrading = {
+    ...grading,
+    score
+  };
+
+  return [
+    detail.studentNumber,
+    detail.studentName,
+    detail.locked ? "TRUE" : "FALSE",
+    detail.submittedAt ?? "",
+    now,
+    detail.transcriptText ?? "",
+    stringifyJson(detail.analysisItems),
+    stringifyJson(detail.studentChoices),
+    stringifyJson(detail.answerKey),
+    stringifyJson(adjustedGrading),
+    String(score),
+    detail.incorrectSummary ?? summarizeIncorrect(adjustedGrading),
+    stringifyJson(detail.wordcloudEntries),
+    detail.imagePrompt
+  ];
+}
+
 async function listClassTabs(sheets: sheets_v4.Sheets): Promise<string[]> {
   const { sheetId } = getSheetConfig();
   const response = await sheets.spreadsheets.get({
@@ -284,6 +309,25 @@ export function createGoogleSheetsStorage(client = makeSheetsClient()): Storage 
         submittedAt: detail.submittedAt ?? now,
         updatedAt: now,
         score: grading.score
+      };
+    },
+
+    async updateScore(identity, score) {
+      const detail = await this.getStudentDetail(identity);
+      if (!detail?.rowNumber) {
+        throw new Error("Roster record not found.");
+      }
+
+      const now = new Date().toISOString();
+      await updateRow(client, detail.className, detail.rowNumber, scoreAdjustedSubmissionToRow(detail, score, now));
+      return {
+        ...detail,
+        updatedAt: now,
+        grading: {
+          ...(detail.grading ?? gradeChoices(detail.analysisItems, detail.studentChoices, detail.answerKey)),
+          score
+        },
+        score
       };
     },
 

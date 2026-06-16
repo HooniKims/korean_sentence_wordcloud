@@ -7,6 +7,12 @@ type OpenAIClient = Pick<OpenAI, "chat">;
 
 const OPENAI_ANALYSIS_MODEL = "gpt-5.4-nano";
 const MINIMUM_QUESTION_COUNT = 12;
+const MINIMUM_CONFIDENCE = 0.8;
+const STANDARD_POS_OVERRIDES: Record<string, KoreanPos> = {
+  "잘생기다": "형용사",
+  "못생기다": "형용사"
+};
+const ALLOWED_PARTICLES = new Set(["은", "는", "이", "가", "을", "를", "에", "와"]);
 const SUPPLEMENTAL_CANDIDATES: Array<{
   surface: string;
   lemma: string;
@@ -31,9 +37,6 @@ const SUPPLEMENTAL_CANDIDATES: Array<{
   { surface: "아주", lemma: "아주", pos: "부사", pattern: /아주/g, reason: "용언을 직접 꾸미는 말" },
   { surface: "빨리", lemma: "빨리", pos: "부사", pattern: /빨리/g, reason: "용언을 직접 꾸미는 말" },
   { surface: "조용히", lemma: "조용히", pos: "부사", pattern: /조용히/g, reason: "용언을 직접 꾸미는 말" },
-  { surface: "만", lemma: "만", pos: "조사", pattern: /(?<!지)만($|[\s,.!?])/g, reason: "보조사" },
-  { surface: "도", lemma: "도", pos: "조사", pattern: /[가-힣]+도($|[\s,.!?])/g, reason: "보조사" },
-  { surface: "까지", lemma: "까지", pos: "조사", pattern: /[가-힣]+까지($|[\s,.!?])/g, reason: "보조사" },
   { surface: "아", lemma: "아", pos: "감탄사", pattern: /(^|[\s,.!?])아[!,.]?(?=$|[\s,.!?])/g, reason: "감정을 독립적으로 나타내는 말" },
   { surface: "어머", lemma: "어머", pos: "감탄사", pattern: /어머[!,.]?(?=$|[\s,.!?])/g, reason: "감정을 독립적으로 나타내는 말" },
   { surface: "네", lemma: "네", pos: "감탄사", pattern: /(^|[\s,.!?])네[!,.]?(?=$|[\s,.!?])/g, reason: "대답을 독립적으로 나타내는 말" }
@@ -52,14 +55,15 @@ function makePrompt(transcriptText: string, questionCount: number): string {
     "명사, 대명사, 수사는 대상이나 수량을 직접 가리키는 경우만 고른다. 의존 명사(것, 바, 줄, 수 등)와 품사 통용으로 문맥 판단이 필요한 말은 제외한다.",
     "수사는 하나, 둘, 셋처럼 독립적으로 수량 이름을 나타내는 말만 고른다. 한, 두처럼 체언 앞에서 꾸미는 말은 수사 문제로 내지 않는다.",
     "동사와 형용사는 기본형 그대로 제시해도 학생이 뜻을 쉽게 떠올릴 수 있는 쉬운 단어만 고른다.",
+    "잘생기다, 못생기다는 한국어 품사 기준에서 형용사다. 동사로 내지 않는다.",
     "동사와 형용사 후보는 surface와 lemma를 모두 기본형으로 반환한다. 예: 읽고가 아니라 읽다, 예쁜이 아니라 예쁘다.",
     "용언의 활용형 자체를 문제 표면형으로 내지 않는다. 예: 예쁜, 달리는, 먹었다, 피었습니다처럼 모양이 바뀐 말은 surface에 쓰지 않는다.",
     "어미 대입, 불규칙 활용, 본용언과 보조 용언 구별이 필요한 말은 고등학교 수준이므로 제외한다.",
-    "관형사는 체언을 직접 꾸미는 독립 단어만 고른다.",
-    "관형사와 관형어를 구별해야 하는 문제, 품사와 문장 성분을 분리해야 하는 문제는 고등학교 수준이므로 제외한다.",
-    "부사는 용언을 직접 꾸미는 독립 단어만 고른다.",
-    "우리 중학교에서는 조사 중 보조사까지만 다루었다. 조사 문제는 보조사까지만 낸다.",
-    "격조사와 접속조사는 문제로 내지 않는다.",
+    "관형사는 품사 자체가 관형사인 독립 단어만 고른다. 문장 성분인 관형어를 문제로 내지 않는다.",
+    "부사는 품사 자체가 부사인 독립 단어만 고른다. 문장 성분인 부사어를 문제로 내지 않는다.",
+    "품사와 문장 성분을 분리해야 하는 문제는 고등학교 수준이므로 제외한다.",
+    "조사 문제는 은, 는, 이, 가, 을, 를, 에, 와만 낸다.",
+    "만, 도, 까지 등 허용 목록 밖의 조사는 문제로 내지 않는다.",
     "접속부사는 아직 배우지 않았으므로 부사 문제로 내지 않는다.",
     "감탄사는 감정이나 부름, 대답을 독립적으로 나타내는 순수 감탄사만 고른다.",
     "감탄사 후보가 텍스트에 있으면 반드시 포함한다. 예: 아, 어머, 네처럼 독립적으로 나온 말.",
@@ -73,9 +77,9 @@ function makePrompt(transcriptText: string, questionCount: number): string {
     "목표 구성은 9품사 각각 최소 1문제 이상 포함하고, 남은 11문제를 명확도와 빈도로 채우는 것이다.",
     "먼저 9품사 각각에 대해 중학교 수준의 명확한 후보를 찾고, 후보가 있는 품사는 최소 1문제 이상 반드시 포함한다.",
     "그 다음 남은 문항을 빈도와 확신도가 높은 후보로 채운다.",
-    "명사가 많더라도 명사만으로 채우지 말고, 대명사, 수사, 동사, 형용사, 관형사, 부사, 보조사, 감탄사 후보가 명확하면 함께 넣는다.",
+    "명사가 많더라도 명사만으로 채우지 말고, 대명사, 수사, 동사, 형용사, 관형사, 부사, 조사, 감탄사 후보가 명확하면 함께 넣는다.",
     "관형사 후보가 있으면 놓치지 않는다. 예: 새 책, 헌 공책처럼 체언 앞에서 직접 꾸미는 독립 단어.",
-    "조사 후보는 보조사만 포함한다. 예: 은/는, 도, 만, 까지처럼 보탬의 뜻을 더하는 조사.",
+    "조사 후보는 은, 는, 이, 가, 을, 를, 에, 와 중 하나만 포함한다.",
     "한 품사 후보가 충분히 많아도 다른 품사의 명확한 후보가 있으면 그 후보를 우선 포함한다.",
     "items 배열의 순서는 품사별로 섞어서 반환한다. 같은 품사 문제를 길게 연속 배치하지 않는다.",
     "같은 surface 단어를 두 번 이상 반환하지 않는다.",
@@ -120,8 +124,7 @@ function isConjugatedPredicateCandidate(item: AnalysisItem): boolean {
 }
 
 function isUntaughtParticleCandidate(item: AnalysisItem): boolean {
-  const text = `${item.surface} ${item.lemma} ${item.reason}`.replace(/\s+/g, "");
-  return item.pos === "조사" && /(격조사|접속조사|주격조사|목적격조사|부사격조사|관형격조사|호격조사|서술격조사)/.test(text);
+  return item.pos === "조사" && !ALLOWED_PARTICLES.has(item.surface.trim());
 }
 
 function isConjunctiveAdverbCandidate(item: AnalysisItem): boolean {
@@ -239,6 +242,11 @@ function inferPredicateLemma(surface: string, pos: unknown): string {
 
 function normalizeDisplayedPos(record: Record<string, unknown>, surface: string): unknown {
   const lemma = typeof record.lemma === "string" ? record.lemma.trim() : "";
+  const standardPos = STANDARD_POS_OVERRIDES[surface.trim()] ?? STANDARD_POS_OVERRIDES[lemma];
+  if (standardPos) {
+    return standardPos;
+  }
+
   if (/^(저|나|너|우리)의$/.test(surface.trim()) || /^(저|나|너|우리)의$/.test(lemma)) {
     return "대명사";
   }
@@ -365,9 +373,12 @@ function isGroundedInTranscript(item: AnalysisItem, transcriptText: string): boo
     const particlePatterns: Record<string, RegExp> = {
       은: /[가-힣](은|는)(?=$|[\s,.!?])/,
       는: /[가-힣](은|는)(?=$|[\s,.!?])/,
-      도: /[가-힣]도(?=$|[\s,.!?])/,
-      만: /(?<!지)만(?=$|[\s,.!?])/,
-      까지: /[가-힣]+까지(?=$|[\s,.!?])/
+      이: /[가-힣](이|가)(?=$|[\s,.!?])/,
+      가: /[가-힣](이|가)(?=$|[\s,.!?])/,
+      을: /[가-힣](을|를)(?=$|[\s,.!?])/,
+      를: /[가-힣](을|를)(?=$|[\s,.!?])/,
+      에: /[가-힣]에(?=$|[\s,.!?])/,
+      와: /[가-힣]와(?=$|[\s,.!?])/
     };
     return Boolean(particlePatterns[surface]?.test(text));
   }
@@ -377,6 +388,13 @@ function isGroundedInTranscript(item: AnalysisItem, transcriptText: string): boo
   }
 
   if ((item.pos === "동사" || item.pos === "형용사") && surface.endsWith("다")) {
+    if (surface === "잘생기다" && /잘생겼|잘생긴|잘생기/.test(text)) {
+      return true;
+    }
+    if (surface === "못생기다" && /못생겼|못생긴|못생기/.test(text)) {
+      return true;
+    }
+
     const stem = surface.slice(0, -1);
     if (stem && text.includes(stem)) {
       return true;
@@ -515,6 +533,7 @@ export async function analyzeKoreanText(
   const safeItems = analysisItemsSchema
     .parse(supplemented)
     .filter((item) => isGroundedInTranscript(item, transcriptText))
+    .filter((item) => item.confidence >= MINIMUM_CONFIDENCE)
     .filter(isSafeMiddleSchoolCandidate);
 
   const selectedItems = selectBalancedItems(dedupeByDisplayedWord(safeItems), questionCount);

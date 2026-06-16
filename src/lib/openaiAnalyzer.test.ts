@@ -135,14 +135,7 @@ describe("openaiAnalyzer", () => {
     expect(client.calls[0]).toMatchObject({
       messages: [
         {
-          content: expect.stringContaining("보조사까지만")
-        }
-      ]
-    });
-    expect(client.calls[0]).toMatchObject({
-      messages: [
-        {
-          content: expect.stringContaining("격조사와 접속조사는 문제로 내지 않는다")
+          content: expect.stringContaining("조사 문제는 은, 는, 이, 가, 을, 를, 에, 와만")
         }
       ]
     });
@@ -226,7 +219,7 @@ describe("openaiAnalyzer", () => {
     expect(client.calls[0]).toMatchObject({
       messages: [
         {
-          content: expect.stringContaining("조사 후보는 보조사만 포함")
+          content: expect.stringContaining("만, 도, 까지")
         }
       ]
     });
@@ -344,6 +337,40 @@ describe("openaiAnalyzer", () => {
       expect.objectContaining({ surface: "재미있다", lemma: "재미있다", pos: "형용사" }),
       expect.objectContaining({ surface: "좋다", lemma: "좋다", pos: "형용사" })
     ]);
+  });
+
+  it("uses standard Korean POS criteria for known adjectives such as 잘생기다", async () => {
+    const items = await analyzeKoreanText("그 친구는 잘생겼고 마음도 착했다.", {
+      questionCount: 2,
+      random: () => 0.99,
+      client: mockClient(
+        JSON.stringify({
+          items: [
+            { surface: "잘생겼고", lemma: "잘생기다", pos: "동사", frequency: 1, reason: "움직임을 나타냄", confidence: 0.95 },
+            { surface: "착했다", lemma: "착하다", pos: "형용사", frequency: 1, reason: "성질을 나타냄", confidence: 0.9 }
+          ]
+        })
+      )
+    });
+
+    expect(items).toContainEqual(expect.objectContaining({ surface: "잘생기다", lemma: "잘생기다", pos: "형용사" }));
+  });
+
+  it("drops low-confidence candidates instead of making difficult borderline questions", async () => {
+    const items = await analyzeKoreanText("학교에서 친구가 책을 읽었다.", {
+      questionCount: 1,
+      random: () => 0.99,
+      client: mockClient(
+        JSON.stringify({
+          items: [
+            { surface: "학교", lemma: "학교", pos: "명사", frequency: 10, reason: "대상 이름", confidence: 0.79 },
+            { surface: "친구", lemma: "친구", pos: "명사", frequency: 1, reason: "사람 이름", confidence: 0.9 }
+          ]
+        })
+      )
+    });
+
+    expect(items).toEqual([expect.objectContaining({ surface: "친구", pos: "명사" })]);
   });
 
   it("normalizes possessive pronoun forms to pronoun questions", async () => {
@@ -466,7 +493,7 @@ describe("openaiAnalyzer", () => {
       })),
       { surface: "새", lemma: "새", pos: "관형사", frequency: 8, reason: "체언을 직접 꾸밈", confidence: 0.9 },
       { surface: "빨리", lemma: "빨리", pos: "부사", frequency: 8, reason: "용언을 직접 꾸밈", confidence: 0.9 },
-      { surface: "만", lemma: "만", pos: "조사", frequency: 8, reason: "보조사", confidence: 0.9 }
+      { surface: "에", lemma: "에", pos: "조사", frequency: 8, reason: "조사", confidence: 0.9 }
     ];
 
     const items = await analyzeKoreanText(
@@ -475,7 +502,7 @@ describe("openaiAnalyzer", () => {
         ...responseItems.filter((item) => item.pos === "동사" || item.pos === "형용사").map((item) => item.lemma),
         "새",
         "빨리",
-        "학교만"
+        "학교에"
       ]),
       {
       client: mockClient(JSON.stringify({ items: responseItems })),
@@ -488,7 +515,7 @@ describe("openaiAnalyzer", () => {
     expect(items.filter((item) => item.pos === "명사")).toHaveLength(10);
   });
 
-  it("supplements clear middle-school POS candidates from the transcript when the model omits them", async () => {
+  it("supplements clear middle-school non-particle POS candidates from the transcript when the model omits them", async () => {
     const responseItems = Array.from({ length: 12 }, (_, index) => ({
       surface: `명사${index + 1}`,
       lemma: `명사${index + 1}`,
@@ -507,7 +534,7 @@ describe("openaiAnalyzer", () => {
     );
 
     expect(items).toHaveLength(20);
-    expect(new Set(items.map((item) => item.pos))).toEqual(new Set(["명사", "대명사", "수사", "동사", "형용사", "관형사", "부사", "조사", "감탄사"]));
+    expect(new Set(items.map((item) => item.pos))).toEqual(new Set(["명사", "대명사", "수사", "동사", "형용사", "관형사", "부사", "감탄사"]));
   });
 
   it("shuffles the final POS questions instead of always returning frequency order", async () => {
@@ -548,15 +575,16 @@ describe("openaiAnalyzer", () => {
     expect(items[0]).toMatchObject({ surface: "학교", frequency: 3, reason: "대상 이름" });
   });
 
-  it("keeps only auxiliary particles for particle questions and filters out case/connective particles and conjunctive adverbs", async () => {
-    const items = await analyzeKoreanText("학교만 갔다. 그리고 책을 읽었다.", {
-      questionCount: 2,
+  it("keeps only the teacher-approved particles and filters out all other particles and conjunctive adverbs", async () => {
+    const items = await analyzeKoreanText("학교에 친구와 갔다. 책도 읽고 학교만 보았다.", {
+      questionCount: 3,
       random: () => 0.99,
       client: mockClient(
         JSON.stringify({
           items: [
             { surface: "학교", lemma: "학교", pos: "명사", frequency: 2, reason: "대상 이름", confidence: 0.9 },
             { surface: "만", lemma: "만", pos: "조사", frequency: 2, reason: "보조사", confidence: 0.9 },
+            { surface: "도", lemma: "도", pos: "조사", frequency: 2, reason: "보조사", confidence: 0.9 },
             { surface: "에", lemma: "에", pos: "조사", frequency: 2, reason: "격조사", confidence: 0.9 },
             { surface: "와", lemma: "와", pos: "조사", frequency: 2, reason: "접속조사", confidence: 0.9 },
             { surface: "그리고", lemma: "그리고", pos: "부사", frequency: 2, reason: "접속부사", confidence: 0.9 }
@@ -567,25 +595,29 @@ describe("openaiAnalyzer", () => {
 
     expect(items).toEqual([
       expect.objectContaining({ surface: "학교", pos: "명사" }),
-      expect.objectContaining({ surface: "만", pos: "조사" })
+      expect.objectContaining({ surface: "에", pos: "조사" }),
+      expect.objectContaining({ surface: "와", pos: "조사" })
     ]);
   });
 
-  it("does not treat the ending in 지만 as the auxiliary particle 만", async () => {
-    const items = await analyzeKoreanText("말은 섞였지만 책도 보았다.", {
-      questionCount: 1,
+  it("does not supplement excluded particles such as 만, 도, and 까지 from the transcript", async () => {
+    const items = await analyzeKoreanText("학교만 갔다. 책도 보았다. 운동장까지 걸었다. 친구는 웃었다.", {
+      questionCount: 2,
       random: () => 0.99,
       client: mockClient(
         JSON.stringify({
           items: [
-            { surface: "만", lemma: "만", pos: "조사", frequency: 2, reason: "보조사", confidence: 0.9 },
-            { surface: "도", lemma: "도", pos: "조사", frequency: 1, reason: "보조사", confidence: 0.9 }
+            { surface: "학교", lemma: "학교", pos: "명사", frequency: 2, reason: "대상 이름", confidence: 0.9 },
+            { surface: "친구", lemma: "친구", pos: "명사", frequency: 1, reason: "대상 이름", confidence: 0.9 }
           ]
         })
       )
     });
 
-    expect(items).toEqual([expect.objectContaining({ surface: "도", pos: "조사" })]);
+    expect(items).toEqual([
+      expect.objectContaining({ surface: "학교", pos: "명사" }),
+      expect.objectContaining({ surface: "친구", pos: "명사" })
+    ]);
   });
 
   it("filters out high-school-only and ambiguous grammar candidates", async () => {

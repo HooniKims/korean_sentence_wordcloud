@@ -55,4 +55,72 @@ describe("Google Sheets storage mapping assumptions", () => {
       }
     });
   });
+
+  it("updates only the teacher-adjusted score fields while preserving saved answers", async () => {
+    const updatedRows: unknown[] = [];
+    const analysisItems = [
+      { id: "w1", surface: "학교", lemma: "학교", pos: "명사" as const, frequency: 1, reason: "", confidence: 1 }
+    ];
+    const studentChoices = { w1: "동사" as const };
+    const answerKey = { w1: "명사" as const };
+    const grading = gradeChoices(analysisItems, studentChoices, answerKey);
+    const sheetValues = [
+      [
+        "student_number",
+        "student_name",
+        "locked",
+        "submitted_at",
+        "updated_at",
+        "transcript_text",
+        "ai_analysis_json",
+        "student_choices_json",
+        "answer_key_json",
+        "grading_json",
+        "score",
+        "incorrect_summary",
+        "wordcloud_json",
+        "image_prompt"
+      ],
+      [
+        "1101",
+        "김민수",
+        "FALSE",
+        "2026-06-10T00:00:00.000Z",
+        "2026-06-10T00:00:00.000Z",
+        "학교에 갔다.",
+        JSON.stringify(analysisItems),
+        JSON.stringify(studentChoices),
+        JSON.stringify(answerKey),
+        JSON.stringify(grading),
+        String(grading.score),
+        summarizeIncorrect(grading),
+        JSON.stringify(buildWordcloudEntries(analysisItems, studentChoices, answerKey, grading)),
+        "프롬프트"
+      ]
+    ];
+    const client = {
+      spreadsheets: {
+        values: {
+          get: async () => ({ data: { values: sheetValues } }),
+          update: async (params: { requestBody: { values: string[][] } }) => {
+            updatedRows.push(params.requestBody.values[0]);
+            return { data: {} };
+          }
+        }
+      }
+    } as never;
+
+    const storage = createGoogleSheetsStorage(client);
+    const updated = await storage.updateScore(
+      { className: "1반", studentNumber: "1101", studentName: "김민수" },
+      75
+    );
+
+    const savedRow = updatedRows[0] as string[];
+    expect(updated.score).toBe(75);
+    expect(updated.studentChoices).toEqual(studentChoices);
+    expect(JSON.parse(savedRow[7])).toEqual(studentChoices);
+    expect(JSON.parse(savedRow[9])).toMatchObject({ score: 75, incorrectItems: grading.incorrectItems });
+    expect(savedRow[10]).toBe("75");
+  });
 });

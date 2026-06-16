@@ -44,6 +44,7 @@ export type Storage = {
   getDashboardRows(): Promise<SubmissionRecord[]>;
   getStudentDetail(identity: StudentIdentity): Promise<SubmissionRecord | null>;
   updateAnswerKey(identity: StudentIdentity, answerKey: AnswerKey): Promise<SubmissionRecord>;
+  updateScore(identity: StudentIdentity, score: number): Promise<SubmissionRecord>;
   lockStudent(identity: StudentIdentity): Promise<void>;
   lockClass(className: string): Promise<void>;
 };
